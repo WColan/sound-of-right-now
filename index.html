@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sound of Right Now</title>
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+<body>
+  <canvas id="visualizer"></canvas>
+
+  <div id="overlay" class="overlay">
+    <div class="overlay-content">
+      <h1>Sound of Right Now</h1>
+      <p>Generative ambient music shaped by the weather where you are.</p>
+      <button id="listen-btn" class="listen-btn">Listen</button>
+    </div>
+  </div>
+
+  <div id="info-display" class="info-display hidden">
+    <div class="info-location" id="info-location"></div>
+    <div class="info-details" id="info-details"></div>
+  </div>
+
+  <div id="controls" class="controls hidden">
+    <button id="location-btn" class="control-btn">change location</button>
+  </div>
+
+  <div id="location-search" class="location-search hidden">
+    <input type="text" id="city-input" placeholder="Search city..." autocomplete="off" />
+    <div id="city-results" class="city-results"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

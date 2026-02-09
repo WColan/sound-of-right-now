@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:open-meteo.com)",
+      "WebFetch(domain:tonejs.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.omi.me)",
+      "Bash(npm create:*)",
+      "Bash(npx --yes create-vite@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vite:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}

@@ -1,0 +1,203 @@
+:root {
+  --bg: #0a0a0f;
+  --text-primary: rgba(255, 255, 255, 0.85);
+  --text-secondary: rgba(255, 255, 255, 0.45);
+  --text-dim: rgba(255, 255, 255, 0.25);
+  --accent: rgba(120, 160, 255, 0.6);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+canvas#visualizer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+/* Start overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 1.5s ease, visibility 1.5s ease;
+}
+
+.overlay.fade-out {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.overlay-content {
+  text-align: center;
+  max-width: 400px;
+  padding: 2rem;
+}
+
+.overlay-content h1 {
+  font-size: 1.8rem;
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+
+.overlay-content p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+.listen-btn {
+  background: none;
+  border: 1px solid var(--text-secondary);
+  color: var(--text-primary);
+  padding: 0.8rem 2.5rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.listen-btn:hover {
+  border-color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Info display - bottom left */
+.info-display {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 10;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  line-height: 1.8;
+  transition: opacity 1s ease;
+}
+
+.info-display.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.info-location {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+
+.info-details {
+  color: var(--text-secondary);
+}
+
+/* Controls - bottom right */
+.controls {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 10;
+  transition: opacity 1s ease;
+}
+
+.controls.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.3s ease;
+}
+
+.control-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* Location search */
+.location-search {
+  position: fixed;
+  bottom: 4rem;
+  right: 2rem;
+  z-index: 20;
+  transition: opacity 0.3s ease;
+}
+
+.location-search.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.location-search input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  width: 220px;
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.location-search input:focus {
+  border-color: var(--accent);
+}
+
+.city-results {
+  background: rgba(10, 10, 15, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.city-results:empty {
+  display: none;
+}
+
+.city-result {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.city-result:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
