@@ -55,9 +55,16 @@ export function createBassVoice() {
     output: filter,
 
     playNote(note) {
+      // Stop first if already playing to avoid "start time must be strictly
+      // greater than previous start time" errors on the LFO oscillator
+      if (currentNote) {
+        synth.triggerRelease();
+        lfo.stop();
+      }
       currentNote = note;
-      lfo.start();
-      synth.triggerAttack(note, undefined, 0.6);
+      const t = Tone.now() + 0.01; // Tiny offset ensures strictly increasing time
+      lfo.start(t);
+      synth.triggerAttack(note, t, 0.6);
     },
 
     changeNote(note) {

@@ -73,12 +73,18 @@ export function createDroneVoice() {
      * @param {string} rootName - Note name without octave (e.g. 'D')
      */
     playNote(rootName) {
+      // Release first if already playing to avoid start-time collisions
+      if (currentRootNote) {
+        rootSynth.triggerRelease();
+        fifthSynth.triggerRelease();
+      }
       const { root, fifth } = getRootAndFifth(rootName);
       currentRootNote = root;
       currentFifthNote = fifth;
 
-      rootSynth.triggerAttack(root, undefined, 0.5);
-      fifthSynth.triggerAttack(fifth, undefined, 0.4);
+      const t = Tone.now() + 0.01; // Tiny offset ensures strictly increasing time
+      rootSynth.triggerAttack(root, t, 0.5);
+      fifthSynth.triggerAttack(fifth, t, 0.4);
     },
 
     /**

@@ -1,0 +1,8 @@
+# Local Claude config
+.claude/settings.local.json
+
+# Build output
+dist/
+
+# Dependencies
+node_modules/

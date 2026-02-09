@@ -184,9 +184,8 @@ export function createSoundEngine() {
     start(params) {
       Tone.getTransport().bpm.value = params.bpm || 72;
       Tone.getTransport().start();
-
-      // Apply initial parameters and start voices
-      this.applyParams(params);
+      // Note: applyParams is NOT called here — the interpolator's first
+      // update() call handles it, avoiding a double-apply at boot time.
     },
 
     /**
