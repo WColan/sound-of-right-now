@@ -57,14 +57,49 @@ function onWeatherUpdate(weather) {
     brightness: musicalParams.padBrightness,
     tideLevel: currentTideData?.waterLevel ?? null,
     sunTransition: musicalParams._meta.sunTransition,
+    cloudCover: weather.cloudCover ?? 0,
+    filterWarmth: musicalParams._meta.filterWarmth ?? 0,
+    aqiNorm: musicalParams._meta.aqiNorm ?? 0,
   });
 
-  console.log(
-    `Weather: ${weather.temperature.toFixed(1)}°C, ${musicalParams._meta.category} → ` +
-    `${musicalParams.rootNote} ${musicalParams.scaleType}, ${musicalParams.bpm} BPM` +
-    (currentAqiData ? ` | AQI: ${currentAqiData.aqi}` : '') +
-    ` | Season: ${musicalParams._meta.seasonalFactor.toFixed(2)}`
+  // ── Detailed logging: data inputs → sound mappings ──
+  console.groupCollapsed(
+    `🌤 Weather Update: ${weather.temperature.toFixed(1)}°C ${musicalParams._meta.category} → ${musicalParams.rootNote} ${musicalParams.scaleType}`
   );
+
+  console.log('%c── Environment Inputs ──', 'font-weight: bold; color: #7ba4ff');
+  console.table({
+    'Temperature':    { value: `${weather.temperature.toFixed(1)}°C`, effect: `→ ${musicalParams.rootNote} ${musicalParams.scaleType} (mode), ${musicalParams.bpm} BPM` },
+    'Humidity':       { value: `${weather.humidity}%`, effect: `→ reverb decay ${musicalParams.reverbDecay.toFixed(1)}s, wet ${(musicalParams.reverbWet * 100).toFixed(0)}%` },
+    'Pressure':       { value: `${weather.pressure.toFixed(0)} hPa`, effect: `→ bass cutoff ${musicalParams.bassCutoff.toFixed(0)}Hz, bass vol ${musicalParams.bassVolume.toFixed(1)}dB, drone vol ${musicalParams.droneVolume.toFixed(1)}dB` },
+    'Wind':           { value: `${weather.windSpeed.toFixed(1)} km/h @ ${weather.windDirection}°`, effect: `→ rhythm ${musicalParams.rhythmDensity.toFixed(2)}, arp "${musicalParams.arpeggioPattern}", perc pan ${musicalParams.percussionPan.toFixed(2)}` },
+    'UV Index':       { value: `${(weather.uvIndex ?? 0).toFixed(1)}`, effect: `→ arp filter ${musicalParams.arpeggioFilterCutoff.toFixed(0)}Hz` },
+    'Weather Code':   { value: `${weather.weatherCode} (${musicalParams._meta.category})`, effect: `→ spread ${musicalParams.padSpread}¢, perc "${musicalParams.percussionPattern}", arp "${musicalParams.arpeggioRhythmPattern}"` },
+    'Time of Day':    { value: musicalParams._meta.timeOfDay, effect: `→ brightness ${musicalParams.padBrightness.toFixed(2)}, master ${musicalParams.masterFilterCutoff.toFixed(0)}Hz, vel ${musicalParams.globalVelocityScale.toFixed(2)}x` },
+    'Moon':           { value: `${(musicalParams._meta.moonFullness * 100).toFixed(0)}% full`, effect: `→ LFO ${musicalParams.lfoRate.toFixed(3)}Hz/${musicalParams.lfoDepth.toFixed(2)}, chorus ${musicalParams.chorusDepth.toFixed(2)}` },
+    'Season':         { value: `factor ${musicalParams._meta.seasonalFactor.toFixed(2)}`, effect: `→ brightness/filter modulation` },
+    'AQI':            { value: currentAqiData ? `${currentAqiData.aqi} (norm ${musicalParams._meta.aqiNorm.toFixed(2)})` : 'n/a', effect: currentAqiData ? `→ filter haze, reverb boost` : '→ no effect' },
+    'Tide':           { value: currentTideData ? `${currentTideData.waterLevel.toFixed(1)}ft` : 'n/a', effect: currentTideData ? `→ bass swell` : '→ no effect' },
+    'Golden Hour':    { value: `${(musicalParams._meta.filterWarmth * 100).toFixed(0)}%`, effect: musicalParams._meta.filterWarmth > 0 ? `→ warm filter reduction` : '→ no effect' },
+  });
+
+  console.log('%c── Sound Output ──', 'font-weight: bold; color: #ffba7a');
+  console.table({
+    'Key & Tempo':    `${musicalParams.rootNote} ${musicalParams.scaleType} @ ${musicalParams.bpm} BPM`,
+    'Pad':            `vol ${musicalParams.padVolume}dB, bright ${musicalParams.padBrightness.toFixed(2)}, spread ${musicalParams.padSpread}¢`,
+    'Arpeggio':       `vol ${musicalParams.arpeggioVolume.toFixed(1)}dB, filter ${musicalParams.arpeggioFilterCutoff.toFixed(0)}Hz, pan ${musicalParams.arpeggioPan.toFixed(2)}`,
+    'Bass':           `vol ${musicalParams.bassVolume.toFixed(1)}dB, cutoff ${musicalParams.bassCutoff.toFixed(0)}Hz`,
+    'Drone':          `vol ${musicalParams.droneVolume.toFixed(1)}dB`,
+    'Melody':         `vol ${musicalParams.melodyVolume.toFixed(1)}dB, mood "${musicalParams.melodyMood}", pan ${musicalParams.melodyPan.toFixed(2)}`,
+    'Texture':        `vol ${musicalParams.textureVolume}dB, noise "${musicalParams.noiseType || 'off'}", filter ${musicalParams.textureFilterCutoff.toFixed(0)}Hz`,
+    'Percussion':     `vol ${musicalParams.percussionVolume}dB, "${musicalParams.percussionPattern}", pan ${musicalParams.percussionPan.toFixed(2)}`,
+    'Master Filter':  `${musicalParams.masterFilterCutoff.toFixed(0)}Hz`,
+    'Master Volume':  `${musicalParams.globalVelocityScale.toFixed(2)}x`,
+    'Reverb':         `decay ${musicalParams.reverbDecay.toFixed(1)}s, wet ${(musicalParams.reverbWet * 100).toFixed(0)}%`,
+    'Chorus/LFO':     `chorus ${musicalParams.chorusDepth.toFixed(2)}, LFO ${musicalParams.lfoRate.toFixed(3)}Hz/${musicalParams.lfoDepth.toFixed(2)}`,
+  });
+
+  console.groupEnd();
 }
 
 /**
@@ -145,6 +180,9 @@ async function boot(latitude, longitude, locationName) {
   visualizer = createVisualizer(canvas, engine.analyser, engine.waveformAnalyser);
   visualizer.start();
 
+  // Wire chord changes from engine → visualizer
+  engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+
   // Start engine with neutral placeholder params
   const placeholderParams = mapWeatherToMusic({
     temperature: 15, humidity: 50, pressure: 1013,
@@ -161,6 +199,7 @@ async function boot(latitude, longitude, locationName) {
   setTimeout(() => {
     infoDisplay.classList.remove('hidden');
     controls.classList.remove('hidden');
+    document.getElementById('chord-display').classList.remove('hidden');
   }, 1000);
 
   // Connect to real weather data

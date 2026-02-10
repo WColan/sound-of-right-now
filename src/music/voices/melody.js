@@ -20,12 +20,12 @@ import { noteToMidi, midiToNote } from '../scale.js';
 
 // Mood configuration: { probability, minNotes, maxNotes, noteDuration, restBetween }
 const MOOD_CONFIG = {
-  calm:       { probability: 0.35, minNotes: 2, maxNotes: 3, noteDuration: '4n', restBetween: '8n' },
-  gentle:     { probability: 0.45, minNotes: 3, maxNotes: 4, noteDuration: '4n', restBetween: '8n' },
-  melancholy: { probability: 0.50, minNotes: 3, maxNotes: 5, noteDuration: '4n.', restBetween: '16n' },
-  tense:      { probability: 0.60, minNotes: 4, maxNotes: 5, noteDuration: '8n', restBetween: '16n' },
-  suspended:  { probability: 0.25, minNotes: 2, maxNotes: 3, noteDuration: '2n', restBetween: '4n' },
-  sparse:     { probability: 0.30, minNotes: 2, maxNotes: 3, noteDuration: '2n', restBetween: '8n' },
+  calm:       { probability: 0.50, minNotes: 2, maxNotes: 4, noteDuration: '4n', restBetween: '8n' },
+  gentle:     { probability: 0.60, minNotes: 3, maxNotes: 5, noteDuration: '4n', restBetween: '8n' },
+  melancholy: { probability: 0.65, minNotes: 3, maxNotes: 5, noteDuration: '4n.', restBetween: '16n' },
+  tense:      { probability: 0.75, minNotes: 4, maxNotes: 5, noteDuration: '8n', restBetween: '16n' },
+  suspended:  { probability: 0.40, minNotes: 2, maxNotes: 3, noteDuration: '2n', restBetween: '4n' },
+  sparse:     { probability: 0.45, minNotes: 2, maxNotes: 4, noteDuration: '2n', restBetween: '8n' },
 };
 
 export function createMelodyVoice() {
@@ -120,11 +120,11 @@ export function createMelodyVoice() {
       const isChordTone = i === 0 || Math.random() < 0.7;
       const note = pickNote(isChordTone);
 
-      // Slight velocity variation — first and last notes slightly louder
+      // Velocity variation — first and last notes accented for phrase shape
       const isAccent = i === 0 || i === noteCount - 1;
       const velocity = isAccent
-        ? 0.35 + Math.random() * 0.1
-        : 0.25 + Math.random() * 0.1;
+        ? 0.50 + Math.random() * 0.15
+        : 0.38 + Math.random() * 0.12;
 
       const eventId = Tone.getTransport().scheduleOnce((t) => {
         synth.triggerAttackRelease(note, config.noteDuration, t, velocity);

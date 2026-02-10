@@ -128,7 +128,7 @@ export function mapWeatherToMusic(weather, options = {}) {
 
   // ── Melody params ──
   const melodyMood = mapWeatherToMelodyMood(category);
-  const melodyBaseVolume = lerp(-26, -16, timeOfDay.brightness);
+  const melodyBaseVolume = lerp(-22, -12, timeOfDay.brightness);
   const melodyVolume = melodyBaseVolume + (palette.melodyVolumeOffset || 0);
 
   // ── Binaural panning ──

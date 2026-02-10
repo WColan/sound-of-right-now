@@ -197,6 +197,71 @@ canvas#visualizer {
   color: var(--text-primary);
 }
 
+/* Chord display - bottom center */
+.chord-display {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  text-align: center;
+  transition: opacity 1s ease;
+}
+
+.chord-display.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chord-name {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  min-height: 1.2em;
+  transition: opacity 0.8s ease;
+}
+
+.chord-name.fade-in {
+  opacity: 1;
+}
+
+.chord-name.fade-out {
+  opacity: 0.3;
+}
+
+/* Progression timeline */
+.chord-timeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 10px;
+}
+
+.chord-timeline .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: all 0.6s ease;
+}
+
+.chord-timeline .dot.active {
+  background: var(--accent);
+  transform: scale(1.4);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.chord-timeline .dot.past {
+  background: var(--text-secondary);
+}
+
+.chord-timeline.transitioning .dot {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
 .hidden {
   opacity: 0;
   pointer-events: none;

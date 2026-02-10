@@ -115,6 +115,9 @@ export function createSoundEngine() {
   let currentPressureNorm = 0.5;
   let lastPadVoicing = null;
 
+  // External chord change listener (for visualizer)
+  let externalChordChangeCallback = null;
+
   // ── Progression player ──
   const progressionPlayer = createProgressionPlayer({
     onChordChange(chord, index, total) {
@@ -157,6 +160,25 @@ export function createSoundEngine() {
       console.log(
         `♫ Chord ${index + 1}/${total}: degree ${chord.degree} (${chord.quality}) — ${chord.notes.join(', ')}`
       );
+
+      // Notify external listener (visualizer)
+      if (externalChordChangeCallback) {
+        externalChordChangeCallback({
+          rootName: chord.chordRootName,
+          quality: chord.quality,
+          degree: chord.degree,
+          index,
+          total,
+        });
+      }
+    },
+
+    onCycleEnd() {
+      // Generate a fresh progression with current musical context
+      // so the music never loops the exact same sequence
+      return generateProgression(
+        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+      );
     },
   });
 
@@ -176,6 +198,11 @@ export function createSoundEngine() {
 
     // Expose progression player for external access
     progressionPlayer,
+
+    /** Register callback for chord changes (used by visualizer) */
+    onChordChange(fn) {
+      externalChordChangeCallback = fn;
+    },
 
     /**
      * Start the engine. Call after Tone.start().

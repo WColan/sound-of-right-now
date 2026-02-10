@@ -2,14 +2,20 @@
  * Canvas-based generative visualization.
  *
  * Layers (back to front):
- *   1. Sky gradient (shifts with time of day)
+ *   1. Sky gradient (shifts with time of day, dynamic color palette)
  *   2. Stars (visible at night)
  *   3. Moon (correct phase, with glow)
  *   4. Aurora/shimmer (near sunrise/sunset)
- *   5. Weather particles (rain, snow, fog, or clear)
- *   6. Landscape silhouette (procedural hills)
- *   7. Water/wave line at base (tide + bass FFT)
- *   8. Atmospheric particles (drift with wind, pulse with audio)
+ *   5. Animated clouds (drift with wind, opacity from cloud cover)
+ *   6. Weather particles (rain, snow, fog, or clear)
+ *   7. Waveform-reactive landscape silhouette
+ *   8. Water/wave line at base (tide + bass FFT)
+ *   9. Atmospheric particles (drift with wind, pulse with audio)
+ *
+ * Also manages:
+ *   - Chord name display (DOM overlay, fade transitions)
+ *   - Progression timeline dots (DOM overlay)
+ *   - Dynamic CSS custom properties for UI color cohesion
  */
 
 // Color palettes for different times of day
@@ -32,6 +38,14 @@ const WEATHER_COLOR_SHIFT = {
   storm:   { sat: 0.3, bright: 0.3 },
 };
 
+// Chord quality display names
+const QUALITY_NAMES = {
+  'maj7': 'maj7',
+  'min7': 'm7',
+  'dom7': '7',
+  'min7b5': 'm7b5',
+};
+
 export function createVisualizer(canvas, analyser, waveformAnalyser) {
   const ctx = canvas.getContext('2d');
   let width, height;
@@ -49,6 +63,9 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     brightness: 0.1,
     tideLevel: null,
     sunTransition: 0,
+    cloudCover: 0,
+    filterWarmth: 0,
+    aqiNorm: 0,
   };
 
   // Particles
@@ -56,8 +73,17 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   let weatherParticles = [];
   let stars = [];
 
+  // Clouds
+  let clouds = [];
+
   // Landscape
   let landscape = [];
+
+  // Chord display state
+  let currentChordText = '';
+  let chordFadeTimer = null;
+  const chordNameEl = document.getElementById('chord-name');
+  const chordTimelineEl = document.getElementById('chord-timeline');
 
   function resize() {
     width = window.innerWidth;
@@ -66,6 +92,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     canvas.height = height;
     generateLandscape();
     generateStars();
+    generateClouds();
   }
 
   function generateLandscape() {
@@ -91,6 +118,26 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         size: Math.random() * 1.5 + 0.5,
         twinkleSpeed: Math.random() * 0.02 + 0.005,
         phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function generateClouds() {
+    clouds = [];
+    for (let i = 0; i < 8; i++) {
+      clouds.push({
+        x: Math.random() * width * 1.5 - width * 0.25,
+        y: height * (0.08 + Math.random() * 0.25),
+        width: 120 + Math.random() * 200,
+        height: 30 + Math.random() * 40,
+        speed: 0.1 + Math.random() * 0.3,
+        opacity: 0.15 + Math.random() * 0.2,
+        // Sub-ellipses for fluffy shape
+        blobs: Array.from({ length: 3 + Math.floor(Math.random() * 3) }, () => ({
+          xOff: (Math.random() - 0.5) * 0.8,
+          yOff: (Math.random() - 0.5) * 0.4,
+          scale: 0.4 + Math.random() * 0.6,
+        })),
       });
     }
   }
@@ -140,18 +187,65 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     return null;
   }
 
-  // --- Drawing Functions ---
+  // ── Dynamic Color Palette ──
 
-  function drawSky() {
+  function generateColorPalette() {
     const timeColors = SKY_COLORS[state.timeOfDay] || SKY_COLORS.night;
     const shift = WEATHER_COLOR_SHIFT[state.weatherCategory] || WEATHER_COLOR_SHIFT.clear;
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
     const top = adjustColor(timeColors.top, shift);
     const bottom = adjustColor(timeColors.bottom, shift);
 
-    gradient.addColorStop(0, `rgb(${top[0]}, ${top[1]}, ${top[2]})`);
-    gradient.addColorStop(1, `rgb(${bottom[0]}, ${bottom[1]}, ${bottom[2]})`);
+    // Golden-hour warmth tint
+    let accentR = 120, accentG = 160, accentB = 255;
+    if (state.filterWarmth > 0) {
+      const w = state.filterWarmth;
+      accentR = Math.round(120 + w * 135); // → 255
+      accentG = Math.round(160 - w * 40);  // → 120
+      accentB = Math.round(255 - w * 155);  // → 100
+    }
+
+    // AQI haze: desaturate and grey-shift
+    if (state.aqiNorm > 0) {
+      const h = state.aqiNorm * 0.4;
+      const grey = 140;
+      accentR = Math.round(accentR + (grey - accentR) * h);
+      accentG = Math.round(accentG + (grey - accentG) * h);
+      accentB = Math.round(accentB + (grey - accentB) * h);
+    }
+
+    // Snow: cool white tint
+    if (state.weatherCategory === 'snow') {
+      accentR = Math.round(accentR * 0.7 + 200 * 0.3);
+      accentG = Math.round(accentG * 0.7 + 210 * 0.3);
+      accentB = Math.round(accentB * 0.7 + 230 * 0.3);
+    }
+
+    // Storm: desaturate heavily
+    if (state.weatherCategory === 'storm') {
+      const avg = (accentR + accentG + accentB) / 3;
+      accentR = Math.round(accentR * 0.4 + avg * 0.6);
+      accentG = Math.round(accentG * 0.4 + avg * 0.6);
+      accentB = Math.round(accentB * 0.4 + avg * 0.6);
+    }
+
+    // Set CSS custom properties for UI cohesion
+    const root = document.documentElement;
+    root.style.setProperty('--sky-top', `rgb(${top[0]}, ${top[1]}, ${top[2]})`);
+    root.style.setProperty('--sky-bottom', `rgb(${bottom[0]}, ${bottom[1]}, ${bottom[2]})`);
+    root.style.setProperty('--accent', `rgba(${accentR}, ${accentG}, ${accentB}, 0.6)`);
+    root.style.setProperty('--accent-glow', `rgba(${accentR}, ${accentG}, ${accentB}, 0.3)`);
+
+    return { top, bottom, accentR, accentG, accentB };
+  }
+
+  // --- Drawing Functions ---
+
+  function drawSky() {
+    const palette = generateColorPalette();
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, `rgb(${palette.top[0]}, ${palette.top[1]}, ${palette.top[2]})`);
+    gradient.addColorStop(1, `rgb(${palette.bottom[0]}, ${palette.bottom[1]}, ${palette.bottom[2]})`);
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
@@ -246,6 +340,56 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     }
   }
 
+  // ── Animated Cloud Layer ──
+
+  function drawClouds() {
+    const cloudOpacityBase = (state.cloudCover / 100) * 0.35;
+    if (cloudOpacityBase < 0.01) return; // No clouds to draw
+
+    const windDrift = state.windSpeed * 0.008 * Math.cos((state.windDirection * Math.PI) / 180);
+
+    for (const cloud of clouds) {
+      // Drift with wind
+      cloud.x += cloud.speed + windDrift;
+
+      // Wrap around
+      if (cloud.x > width + cloud.width) {
+        cloud.x = -cloud.width;
+      } else if (cloud.x < -cloud.width * 1.5) {
+        cloud.x = width + cloud.width * 0.5;
+      }
+
+      const alpha = cloud.opacity * cloudOpacityBase;
+      if (alpha < 0.005) continue;
+
+      // Determine cloud color based on time/weather
+      let cloudR = 200, cloudG = 210, cloudB = 220;
+      if (state.timeOfDay === 'night') {
+        cloudR = 30; cloudG = 35; cloudB = 50;
+      } else if (state.timeOfDay === 'dawn' || state.timeOfDay === 'dusk') {
+        cloudR = 180; cloudG = 140; cloudB = 120;
+      }
+      if (state.weatherCategory === 'storm') {
+        cloudR = Math.round(cloudR * 0.4);
+        cloudG = Math.round(cloudG * 0.4);
+        cloudB = Math.round(cloudB * 0.45);
+      }
+
+      // Draw fluffy cloud from overlapping ellipses
+      for (const blob of cloud.blobs) {
+        const bx = cloud.x + blob.xOff * cloud.width;
+        const by = cloud.y + blob.yOff * cloud.height;
+        const bw = cloud.width * blob.scale * 0.5;
+        const bh = cloud.height * blob.scale * 0.5;
+
+        ctx.beginPath();
+        ctx.ellipse(bx, by, bw, bh, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${cloudR}, ${cloudG}, ${cloudB}, ${alpha})`;
+        ctx.fill();
+      }
+    }
+  }
+
   function drawWeatherParticles() {
     const cat = state.weatherCategory;
     const needParticles = ['rain', 'drizzle', 'storm', 'snow'].includes(cat);
@@ -306,13 +450,26 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     }
   }
 
-  function drawLandscape() {
+  // ── Waveform-Reactive Landscape ──
+
+  function drawLandscape(waveformData) {
     if (landscape.length < 2) return;
 
     ctx.beginPath();
     ctx.moveTo(landscape[0].x, landscape[0].y);
+
     for (let i = 1; i < landscape.length; i++) {
-      ctx.lineTo(landscape[i].x, landscape[i].y);
+      let y = landscape[i].y;
+
+      // Waveform displacement: map landscape points to waveform samples
+      if (waveformData) {
+        const sampleIndex = Math.floor((i / landscape.length) * waveformData.length);
+        const sample = waveformData[sampleIndex] || 0;
+        // ±3px Y displacement for a subtle breathing effect
+        y += sample * 3;
+      }
+
+      ctx.lineTo(landscape[i].x, y);
     }
     ctx.lineTo(width, height);
     ctx.lineTo(0, height);
@@ -393,19 +550,83 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     }
   }
 
+  // ── Chord Display ──
+
+  function updateChordDisplay(chordInfo) {
+    if (!chordNameEl || !chordTimelineEl) return;
+
+    const qualityLabel = QUALITY_NAMES[chordInfo.quality] || chordInfo.quality;
+    const newText = `${chordInfo.rootName}${qualityLabel}`;
+
+    // Fade transition
+    chordNameEl.classList.remove('fade-in');
+    chordNameEl.classList.add('fade-out');
+
+    clearTimeout(chordFadeTimer);
+    chordFadeTimer = setTimeout(() => {
+      chordNameEl.textContent = newText;
+      chordNameEl.classList.remove('fade-out');
+      chordNameEl.classList.add('fade-in');
+      currentChordText = newText;
+    }, 200);
+
+    // Update timeline dots
+    updateTimelineDots(chordInfo.index, chordInfo.total);
+  }
+
+  function updateTimelineDots(currentIndex, total) {
+    if (!chordTimelineEl) return;
+
+    // Rebuild dots if count changed (with smooth transition)
+    const existingDots = chordTimelineEl.children.length;
+    if (existingDots !== total) {
+      // Fade out old dots
+      chordTimelineEl.classList.add('transitioning');
+      setTimeout(() => {
+        chordTimelineEl.innerHTML = '';
+        for (let i = 0; i < total; i++) {
+          const dot = document.createElement('div');
+          dot.className = 'dot';
+          chordTimelineEl.appendChild(dot);
+        }
+        // Apply current state to new dots
+        applyDotStates(currentIndex);
+        // Fade in new dots
+        chordTimelineEl.classList.remove('transitioning');
+      }, 300);
+      return;
+    }
+
+    applyDotStates(currentIndex);
+  }
+
+  function applyDotStates(currentIndex) {
+    for (let i = 0; i < chordTimelineEl.children.length; i++) {
+      const dot = chordTimelineEl.children[i];
+      dot.className = 'dot';
+      if (i === currentIndex) {
+        dot.classList.add('active');
+      } else if (i < currentIndex) {
+        dot.classList.add('past');
+      }
+    }
+  }
+
   // --- Main Loop ---
 
   function draw() {
     const fftData = analyser ? analyser.getValue() : null;
+    const waveformData = waveformAnalyser ? waveformAnalyser.getValue() : null;
 
-    // Full redraw (no trail for cleaner look with landscape)
+    // Full redraw
     drawSky();
     drawStars();
     drawMoon();
     drawAurora();
+    drawClouds();
     drawWeatherParticles();
     drawParticles(fftData);
-    drawLandscape();
+    drawLandscape(waveformData);
     drawWaterWave(fftData);
 
     time += 0.016;
@@ -456,9 +677,17 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       Object.assign(state, newState);
     },
 
+    /**
+     * Called by engine on chord change — updates chord name display + timeline.
+     */
+    onChordChange(chordInfo) {
+      updateChordDisplay(chordInfo);
+    },
+
     dispose() {
       this.stop();
       window.removeEventListener('resize', resize);
+      clearTimeout(chordFadeTimer);
     },
   };
 }
