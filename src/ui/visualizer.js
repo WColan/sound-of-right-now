@@ -639,7 +639,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       const alpha = p.alpha * (0.7 + Math.sin(p.pulse) * 0.3) * audioPulse;
 
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * audioPulse, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, Math.max(0, p.size * audioPulse), 0, Math.PI * 2);
       ctx.fillStyle = `rgba(200, 210, 240, ${Math.min(alpha, 0.6)})`;
       ctx.fill();
     }
@@ -751,7 +751,10 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     let sum = 0;
     const e = Math.min(end, data.length);
     for (let i = start; i < e; i++) {
-      sum += (data[i] + 140) / 140; // Normalize from dB (-140 to 0) to 0-1
+      // Clamp to [-140, 0] dB before normalizing — analyser can return -Infinity
+      // at startup (no audio yet), which would produce negative energy values and
+      // cause arc() to receive a negative radius, throwing IndexSizeError.
+      sum += clamp((data[i] + 140) / 140, 0, 1);
     }
     return sum / (e - start);
   }
