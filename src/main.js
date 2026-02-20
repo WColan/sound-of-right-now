@@ -138,7 +138,7 @@ async function startForLocation(latitude, longitude, locationName) {
     // New engine always starts playing — reset pause button accordingly
     isPlaying = true;
     const pauseBtn = document.getElementById('pause-btn');
-    if (pauseBtn) pauseBtn.textContent = 'pause';
+    if (pauseBtn) { pauseBtn.textContent = '⏸'; pauseBtn.setAttribute('aria-label', 'pause'); }
   }
 
   // Stop existing fetchers
@@ -211,10 +211,12 @@ async function boot(latitude, longitude, locationName) {
   pauseBtn.addEventListener('click', () => {
     if (isPlaying) {
       engine.stop();
-      pauseBtn.textContent = 'play';
+      pauseBtn.textContent = '▶';
+      pauseBtn.setAttribute('aria-label', 'play');
     } else {
       engine.resume();
-      pauseBtn.textContent = 'pause';
+      pauseBtn.textContent = '⏸';
+      pauseBtn.setAttribute('aria-label', 'pause');
     }
     isPlaying = !isPlaying;
   });

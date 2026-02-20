@@ -114,6 +114,8 @@ export function createSoundEngine() {
   let currentWeatherCategory = 'clear';
   let currentPressureNorm = 0.5;
   let lastPadVoicing = null;
+  let lastBassNote = null;        // Needed for resume() re-attack
+  let lastDroneRootName = null;   // Needed for resume() re-attack
 
   // External chord change listener (for visualizer)
   let externalChordChangeCallback = null;
@@ -136,6 +138,7 @@ export function createSoundEngine() {
       arpeggio.setChordContext(chord.chordTones, chord.scaleTones);
 
       // Update bass
+      lastBassNote = chord.bassNote;
       if (index === 0 && total > 0) {
         bass.playNote(chord.bassNote);
       } else {
@@ -143,6 +146,7 @@ export function createSoundEngine() {
       }
 
       // Update drone — transpose chord root to octave 1
+      lastDroneRootName = chord.chordRootName;
       if (index === 0 && total > 0) {
         drone.playNote(chord.chordRootName);
       } else {
@@ -478,10 +482,25 @@ export function createSoundEngine() {
     /**
      * Resume after a stop() call. Restarts the autonomous voice loops and the
      * Transport without resetting position — music continues from where it paused.
-     * bass/drone/melody are note-triggered by the progression player, so they
-     * resume naturally when the next chord fires.
+     *
+     * pad/bass/drone need explicit re-attack because stop() called triggerRelease()
+     * on them. The progression player's changeNote() assumes the synth is already
+     * sustaining, so it won't restart a silent voice. We force-restart them here
+     * using the last known voicing/notes before restarting the Transport.
      */
     resume() {
+      // Re-attack tonal voices that were fully released by stop()
+      if (lastPadVoicing && lastPadVoicing.length > 0) {
+        pad.playChord(lastPadVoicing);
+      }
+      if (lastBassNote) {
+        bass.playNote(lastBassNote);
+      }
+      if (lastDroneRootName) {
+        drone.playNote(lastDroneRootName);
+      }
+
+      // Restart looping voices and the Transport clock
       arpeggio.start();
       texture.start();
       percussion.start();

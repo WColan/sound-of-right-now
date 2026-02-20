@@ -138,6 +138,12 @@ canvas#visualizer {
   transition: color 0.3s ease;
 }
 
+#pause-btn {
+  font-size: 1rem; /* Icon glyphs need a bit more room than the text buttons */
+  letter-spacing: 0;
+  line-height: 1;
+}
+
 .control-btn:hover {
   color: var(--text-secondary);
 }
@@ -290,7 +296,7 @@ canvas#visualizer {
   }
 
   .chord-display {
-    bottom: 8rem;
+    bottom: 9rem;
     /* left: 50% + translateX(-50%) already set on desktop — no change */
   }
 
