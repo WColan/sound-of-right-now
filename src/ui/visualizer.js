@@ -46,6 +46,14 @@ const QUALITY_NAMES = {
   'min7b5': 'm7b5',
 };
 
+// Chord quality → color mapping
+const QUALITY_COLORS = {
+  'maj7':   'rgba(255, 210, 100, 0.9)',  // Warm gold
+  'min7':   'rgba(140, 180, 255, 0.9)',  // Cool blue
+  'dom7':   'rgba(255, 155, 80, 0.9)',   // Amber — tension
+  'min7b5': 'rgba(160, 130, 200, 0.9)', // Muted purple — dark
+};
+
 export function createVisualizer(canvas, analyser, waveformAnalyser) {
   const ctx = canvas.getContext('2d');
   let width, height;
@@ -77,12 +85,20 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   let particles = [];
   let weatherParticles = [];
   let stars = [];
+  let splashes = []; // Rain impact ripples
+
+  // Lightning state
+  let lightningAlpha = 0;
+  let lightningTimer = null;
 
   // Clouds
   let clouds = [];
 
   // Landscape
   let landscape = [];
+
+  // Current progression qualities (for dot coloring)
+  let currentAllQualities = [];
 
   // Chord display state
   let currentChordText = '';
@@ -256,13 +272,18 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     ctx.fillRect(0, 0, width, height);
   }
 
-  function drawStars() {
+  function drawStars(fftData) {
     if (state.brightness > 0.5) return; // No stars during day
     const starAlpha = Math.max(0, (0.5 - state.brightness) * 2);
 
+    // High-frequency energy (arpeggio range) drives star pulse amplitude
+    const highFreqEnergy = fftData ? averageBins(fftData, 180, 256) : 0;
+
     for (const star of stars) {
-      const twinkle = 0.5 + Math.sin(time * star.twinkleSpeed + star.phase) * 0.5;
+      // Base twinkle + FFT boost on amplitude
+      const twinkle = clamp(0.5 + Math.sin(time * star.twinkleSpeed + star.phase) * (0.5 + highFreqEnergy * 0.6), 0, 1);
       const alpha = starAlpha * twinkle * 0.8;
+      if (alpha < 0.01) continue;
       ctx.beginPath();
       ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255, 255, 240, ${alpha})`;
@@ -506,6 +527,10 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
 
         if (p.y > height) {
           weatherParticles.splice(i, 1);
+          // Spawn splash impact ripple at landscape baseline
+          if (splashes.length < 80) {
+            splashes.push({ x: p.x, y: height * 0.87, r: 0, alpha: 0.35 });
+          }
           continue;
         }
 
@@ -543,6 +568,63 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         ctx.fillRect(0, y, width, height * 0.15);
       }
     }
+  }
+
+  // ── Rain Splash Ripples ──
+
+  function drawSplashes() {
+    for (let i = splashes.length - 1; i >= 0; i--) {
+      const s = splashes[i];
+      s.r += 0.8;
+      s.alpha *= 0.88;
+      if (s.alpha < 0.01) { splashes.splice(i, 1); continue; }
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y, s.r, s.r * 0.3, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(180, 200, 255, ${s.alpha})`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
+
+  // ── Lightning Flash ──
+
+  function scheduleLightning() {
+    if (state.weatherCategory !== 'storm') return;
+    const delay = 8000 + Math.random() * 27000; // 8–35 seconds between flashes
+    lightningTimer = setTimeout(() => {
+      if (state.weatherCategory !== 'storm') return;
+      // Trigger double flash: initial bright, short gap, secondary weaker flash
+      lightningAlpha = 0.85;
+      setTimeout(() => {
+        lightningAlpha = 0;
+        setTimeout(() => {
+          lightningAlpha = 0.4;
+          setTimeout(() => {
+            lightningAlpha = 0;
+          }, 80);
+        }, 25);
+      }, 50);
+      // Schedule next
+      scheduleLightning();
+    }, delay);
+  }
+
+  function stopLightning() {
+    if (lightningTimer) {
+      clearTimeout(lightningTimer);
+      lightningTimer = null;
+    }
+    lightningAlpha = 0;
+  }
+
+  function drawLightning() {
+    if (lightningAlpha <= 0.01) {
+      lightningAlpha = 0;
+      return;
+    }
+    ctx.fillStyle = `rgba(255, 255, 255, ${lightningAlpha})`;
+    ctx.fillRect(0, 0, width, height);
+    lightningAlpha *= 0.85; // Exponential decay
   }
 
   // ── Waveform-Reactive Landscape ──
@@ -653,6 +735,11 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     const qualityLabel = QUALITY_NAMES[chordInfo.quality] || chordInfo.quality;
     const newText = `${chordInfo.rootName}${qualityLabel}`;
 
+    // Store allQualities for dot coloring
+    if (chordInfo.allQualities?.length > 0) {
+      currentAllQualities = chordInfo.allQualities;
+    }
+
     // Fade transition
     chordNameEl.classList.remove('fade-in');
     chordNameEl.classList.add('fade-out');
@@ -660,6 +747,8 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     clearTimeout(chordFadeTimer);
     chordFadeTimer = setTimeout(() => {
       chordNameEl.textContent = newText;
+      // Apply quality-based color
+      chordNameEl.style.color = QUALITY_COLORS[chordInfo.quality] || 'rgba(255, 255, 255, 0.9)';
       chordNameEl.classList.remove('fade-out');
       chordNameEl.classList.add('fade-in');
       currentChordText = newText;
@@ -682,6 +771,9 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         for (let i = 0; i < total; i++) {
           const dot = document.createElement('div');
           dot.className = 'dot';
+          if (currentAllQualities[i]) {
+            dot.setAttribute('data-quality', currentAllQualities[i]);
+          }
           chordTimelineEl.appendChild(dot);
         }
         // Apply current state to new dots
@@ -698,7 +790,10 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   function applyDotStates(currentIndex) {
     for (let i = 0; i < chordTimelineEl.children.length; i++) {
       const dot = chordTimelineEl.children[i];
+      // Preserve data-quality attribute when resetting class
+      const quality = dot.getAttribute('data-quality') || currentAllQualities[i];
       dot.className = 'dot';
+      if (quality) dot.setAttribute('data-quality', quality);
       if (i === currentIndex) {
         dot.classList.add('active');
       } else if (i < currentIndex) {
@@ -715,15 +810,18 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
 
     // Full redraw
     drawSky();
-    drawStars();
+    drawStars(fftData);
     drawSun();
     drawMoon();
     drawAurora();
     drawClouds();
     drawWeatherParticles();
+    drawSplashes();
     drawParticles(fftData);
     drawLandscape(waveformData);
     drawWaterWave(fftData);
+    // Lightning overlay — on top of everything (storm only)
+    drawLightning();
 
     time += 0.016;
     animFrame = requestAnimationFrame(draw);
@@ -781,7 +879,17 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
      * Update visualization state from weather/music data.
      */
     updateState(newState) {
+      const prevCategory = state.weatherCategory;
       Object.assign(state, newState);
+
+      // Start/stop lightning based on storm state
+      if (newState.weatherCategory !== undefined) {
+        if (newState.weatherCategory === 'storm' && prevCategory !== 'storm') {
+          scheduleLightning();
+        } else if (newState.weatherCategory !== 'storm' && prevCategory === 'storm') {
+          stopLightning();
+        }
+      }
     },
 
     /**
@@ -795,6 +903,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       this.stop();
       window.removeEventListener('resize', resize);
       clearTimeout(chordFadeTimer);
+      stopLightning();
     },
   };
 }

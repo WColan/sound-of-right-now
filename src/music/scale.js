@@ -222,4 +222,51 @@ export function getChordTonesForDegree(root, mode, degreeIndex, lowOctave = 3, h
   return notes.sort((a, b) => noteToMidi(a) - noteToMidi(b));
 }
 
+/**
+ * Build a dominant 7th chord (major triad + minor 7th) on any root note.
+ * Used for secondary dominants — these are chromatic chords, not diatonic.
+ *
+ * Intervals from root: 0 (root), 4 (M3), 7 (P5), 10 (m7)
+ *
+ * @param {string} rootName - Root note name without octave (e.g. 'G')
+ * @param {number} octave - Base octave for the chord voicing
+ * @returns {string[]} 4 note names [root, M3, P5, m7]
+ */
+export function buildDominant7Chord(rootName, octave = 4) {
+  const rootIdx = NOTE_NAMES.indexOf(rootName);
+  if (rootIdx === -1) return [];
+  const baseM = (octave + 1) * 12 + rootIdx;
+  return [
+    midiToNote(baseM),       // root
+    midiToNote(baseM + 4),   // major 3rd
+    midiToNote(baseM + 7),   // perfect 5th
+    midiToNote(baseM + 10),  // minor 7th
+  ];
+}
+
+/**
+ * Get all instances of notes with given semitone offsets from a root,
+ * spread across an octave range. Used to populate `chordTones` for
+ * non-diatonic chords (e.g. secondary dominants).
+ *
+ * @param {string} rootName - Root note name without octave (e.g. 'G')
+ * @param {number[]} semitoneOffsets - Semitone intervals from root (e.g. [0,4,7,10] for dom7)
+ * @param {number} lowOctave
+ * @param {number} highOctave
+ * @returns {string[]} All matching notes across the octave range, sorted low to high
+ */
+export function getChordTonesFromSemitones(rootName, semitoneOffsets, lowOctave = 3, highOctave = 5) {
+  const rootIdx = NOTE_NAMES.indexOf(rootName);
+  if (rootIdx === -1) return [];
+
+  const notes = [];
+  for (let octave = lowOctave; octave <= highOctave; octave++) {
+    for (const offset of semitoneOffsets) {
+      const midi = (octave + 1) * 12 + rootIdx + offset;
+      notes.push(midiToNote(midi));
+    }
+  }
+  return notes.sort((a, b) => noteToMidi(a) - noteToMidi(b));
+}
+
 export { MODES, MODE_SPECTRUM, NOTE_NAMES };

@@ -21,7 +21,26 @@ let visualizer = null;
 let currentTideData = null;
 let currentAqiData = null;
 let currentLatitude = null;
+let currentLongitude = null;
 let isPlaying = true; // Track play/pause state for the pause button
+
+// ── Pressure trend buffer ──
+// Rolling window of the last 3 pressure readings (timestamp + value).
+// Used to detect rising/falling barometer and modulate tension/brightness.
+const pressureHistory = []; // [{ value: number, timestamp: number }, ...]
+
+/**
+ * Update the pressure history and return the normalized trend.
+ * Returns a value in [-1, +1]: negative = falling, positive = rising, 0 = stable.
+ */
+function getPressureTrend(pressureHpa) {
+  pressureHistory.push({ value: pressureHpa, timestamp: Date.now() });
+  if (pressureHistory.length > 3) pressureHistory.shift();
+
+  if (pressureHistory.length < 2) return 0;
+  const delta = pressureHistory.at(-1).value - pressureHistory[0].value;
+  return Math.max(-1, Math.min(1, delta / 5)); // Normalize: ±5 hPa = ±1.0
+}
 
 // Clean up on HMR to prevent duplicate audio contexts
 if (import.meta.hot) {
@@ -40,19 +59,30 @@ if (import.meta.hot) {
 function onWeatherUpdate(weather) {
   if (!interpolator || !display || !visualizer) return;
 
+  const pressureTrend = getPressureTrend(weather.pressure);
+
   const musicalParams = mapWeatherToMusic(weather, {
     tideLevel: currentTideData?.waterLevel ?? null,
     aqiLevel: currentAqiData?.aqi ?? null,
     latitude: currentLatitude ?? 40,
+    pressureTrend,
   });
 
   interpolator.update(musicalParams);
-  display.update(weather, musicalParams, currentTideData);
+  display.update(weather, musicalParams, currentTideData, currentAqiData);
 
   // Compute moonrise/moonset from phase + today's sunrise/sunset
   const now = new Date();
   const moonrise = getMoonriseTime(now, weather.sunrise, weather.sunset);
   const moonset  = getMoonsetTime(now, weather.sunrise, weather.sunset);
+
+  // Update melody's golden-hour / full-moon probability boosts
+  if (engine) {
+    engine.updateCelestialContext(
+      musicalParams._meta.sunTransition,
+      musicalParams._meta.moonFullness,
+    );
+  }
 
   visualizer.updateState({
     timeOfDay: musicalParams._meta.timeOfDay,
@@ -120,8 +150,12 @@ function onWeatherUpdate(weather) {
 async function startForLocation(latitude, longitude, locationName) {
   display.setLocation(locationName || 'Loading...');
 
-  // Store latitude for seasonal awareness
+  // Store lat/lng for seasonal awareness and permalink
   currentLatitude = latitude;
+  currentLongitude = longitude;
+
+  // Update URL so the current location is shareable
+  history.replaceState(null, '', `?lat=${latitude.toFixed(4)}&lng=${longitude.toFixed(4)}`);
 
   // ── Tear down old audio engine ──
   // Tone.js audio nodes are permanently destroyed by dispose() and cannot be
@@ -221,6 +255,64 @@ async function boot(latitude, longitude, locationName) {
     isPlaying = !isPlaying;
   });
 
+  // Wire master volume slider
+  const volSlider = document.getElementById('volume-slider');
+  if (volSlider) {
+    // Restore persisted value
+    volSlider.value = localStorage.getItem('masterVolume') ?? 80;
+
+    volSlider.addEventListener('input', () => {
+      const userScale = volSlider.value / 100;
+      const weatherScale = interpolator.currentParams?.globalVelocityScale ?? 1;
+      engine.effects.masterVelocity.gain.rampTo(userScale * weatherScale, 0.1);
+    });
+
+    // Persist preference
+    volSlider.addEventListener('change', () => {
+      localStorage.setItem('masterVolume', volSlider.value);
+    });
+  }
+
+  // Wire share button — copies current location permalink to clipboard
+  const shareBtn = document.getElementById('share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const url = window.location.href;
+      try {
+        await navigator.clipboard.writeText(url);
+        const orig = shareBtn.textContent;
+        shareBtn.textContent = '✓';
+        setTimeout(() => { shareBtn.textContent = orig; }, 2000);
+      } catch {
+        // Fallback: select the URL from a temporary input
+        const tmp = document.createElement('input');
+        tmp.value = url;
+        document.body.appendChild(tmp);
+        tmp.select();
+        document.execCommand('copy');
+        document.body.removeChild(tmp);
+      }
+    });
+  }
+
+  // ── Keyboard shortcuts ──
+  document.addEventListener('keydown', (e) => {
+    if (!engine) return;
+    if (document.activeElement.tagName === 'INPUT') return; // Don't intercept typing
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        pauseBtn.click();
+        break;
+      case 'l': case 'L':
+        document.getElementById('location-btn')?.click();
+        break;
+      case 'f': case 'F':
+        canvas.requestFullscreen?.();
+        break;
+    }
+  });
+
   // Create visualizer
   visualizer = createVisualizer(canvas, engine.analyser, engine.waveformAnalyser);
   visualizer.start();
@@ -275,13 +367,21 @@ function init() {
       display = createDisplay(); // Temp display for loading message
       display.setLocation('Finding your location...');
 
-      const browserLoc = await getBrowserLocation();
+      // Check for permalink ?lat=&lng= params — shared link takes priority
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlLat = parseFloat(urlParams.get('lat'));
+      const urlLng = parseFloat(urlParams.get('lng'));
 
-      if (browserLoc) {
-        await boot(browserLoc.latitude, browserLoc.longitude, null);
+      if (!isNaN(urlLat) && !isNaN(urlLng)) {
+        await boot(urlLat, urlLng, null);
       } else {
-        // Default to New York
-        await boot(40.7128, -74.006, 'New York, NY');
+        const browserLoc = await getBrowserLocation();
+        if (browserLoc) {
+          await boot(browserLoc.latitude, browserLoc.longitude, null);
+        } else {
+          // Default to New York
+          await boot(40.7128, -74.006, 'New York, NY');
+        }
       }
     } catch (err) {
       console.error('Failed to start:', err);

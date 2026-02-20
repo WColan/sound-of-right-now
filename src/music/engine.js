@@ -77,6 +77,12 @@ export function createSoundEngine() {
   subSaturator.connect(subGain);
   subGain.connect(masterVelocity);
 
+  // ── Percussion reverb (short, dedicated — bypasses shared reverb) ──
+  // Percussion gets its own short reverb so hits sit in the same acoustic
+  // space as the pads without inheriting the 1.5–10s humidity-driven tail.
+  // Fixed 0.6s decay; wet level is weather-driven (fog = wetter, storm = drier).
+  const percussionReverb = new Tone.Reverb({ decay: 0.6, wet: 0.22 });
+
   const limiter = new Tone.Limiter(-3);
 
   const analyser = new Tone.Analyser('fft', 256);
@@ -109,14 +115,25 @@ export function createSoundEngine() {
   const texturePanner = new Tone.Panner(0);       // Center — already diffuse noise
   const dronePanner = new Tone.Panner(0);         // Center
   const melodyPanner = new Tone.Panner(0.25);     // Slightly right
-  // Percussion has its own wind-driven panner already, connects directly
 
-  // Connect voices -> panners -> chorus bus
-  pad.output.connect(padPanner);
+  // ── Stereo wideners — wind-driven spatial expansion ──
+  // Arpeggio and melody get StereoWidener nodes so calm = intimate, gusty = wide.
+  const arpeggioWidener = new Tone.StereoWidener(0.4);
+  const melodyWidener = new Tone.StereoWidener(0.3);
+
+  // ── Pad high-pass filter — EQ carving ──
+  // Removes pad content below 90 Hz to prevent mud with the bass fundamental.
+  // fatsine pads have energy down to ~60 Hz; this creates headroom for the bass.
+  const padHPF = new Tone.Filter({ frequency: 90, type: 'highpass', rolloff: -12 });
+
+  // Connect voices -> HPF/panners -> wideners/chorus bus
+  pad.output.connect(padHPF);
+  padHPF.connect(padPanner);
   padPanner.connect(chorus);
 
   arpeggio.output.connect(arpeggioPanner);
-  arpeggioPanner.connect(chorus);
+  arpeggioPanner.connect(arpeggioWidener);
+  arpeggioWidener.connect(chorus);
 
   bass.output.connect(bassPanner);
   bassPanner.connect(chorus);
@@ -130,10 +147,12 @@ export function createSoundEngine() {
   dronePanner.connect(subBus);  // Second connection — parallel sub-bass tap
 
   melody.output.connect(melodyPanner);
-  melodyPanner.connect(chorus);
+  melodyPanner.connect(melodyWidener);
+  melodyWidener.connect(chorus);
 
-  // Percussion keeps its own panner (wind-driven), connects directly to chorus
-  percussion.output.connect(chorus);
+  // Percussion → dedicated short reverb → masterVelocity (bypasses shared effects chain)
+  percussionReverb.connect(masterVelocity);
+  percussion.output.connect(percussionReverb);
 
   // Track current musical state
   let currentRoot = null;
@@ -144,8 +163,15 @@ export function createSoundEngine() {
   let lastBassNote = null;        // Needed for resume() re-attack
   let lastDroneRootName = null;   // Needed for resume() re-attack
 
+  // Celestial context — updated from weather updates, used by melody for golden-hour boosts
+  let currentSunTransition = 0;
+  let currentMoonFullness = 0;
+
   // External chord change listener (for visualizer)
   let externalChordChangeCallback = null;
+
+  // Current progression reference — needed to read allQualities in the chord callback
+  let currentProgression = null;
 
   // ── Progression player ──
   const progressionPlayer = createProgressionPlayer({
@@ -182,7 +208,11 @@ export function createSoundEngine() {
 
       // Update melody — set chord context and trigger potential phrase
       melody.setChordContext(chord.chordTones, chord.scaleTones);
-      melody.onChordChange();
+      melody.onChordChange({
+        isFirstChord: index === 0,
+        sunTransition: currentSunTransition,
+        moonFullness: currentMoonFullness,
+      });
 
       // Percussion accent on chord change
       percussion.triggerChordAccent();
@@ -200,6 +230,7 @@ export function createSoundEngine() {
           degree: chord.degree,
           index,
           total,
+          allQualities: currentProgression ? currentProgression.chords.map(c => c.quality) : [],
         });
       }
     },
@@ -207,9 +238,10 @@ export function createSoundEngine() {
     onCycleEnd() {
       // Generate a fresh progression with current musical context
       // so the music never loops the exact same sequence
-      return generateProgression(
+      currentProgression = generateProgression(
         currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
       );
+      return currentProgression;
     },
   });
 
@@ -222,7 +254,7 @@ export function createSoundEngine() {
     voices: { pad, arpeggio, bass, texture, percussion, drone, melody },
 
     // Expose effects for direct control
-    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain },
+    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain, percussionReverb, arpeggioWidener, melodyWidener, padHPF },
 
     // Expose panners
     panners: { padPanner, arpeggioPanner, bassPanner, texturePanner, dronePanner, melodyPanner },
@@ -233,6 +265,15 @@ export function createSoundEngine() {
     /** Register callback for chord changes (used by visualizer) */
     onChordChange(fn) {
       externalChordChangeCallback = fn;
+    },
+
+    /**
+     * Update celestial context used by melody for golden-hour / full-moon
+     * phrase probability boosts. Called from main.js on each weather update.
+     */
+    updateCelestialContext(sunTransition, moonFullness) {
+      currentSunTransition = sunTransition ?? 0;
+      currentMoonFullness = moonFullness ?? 0;
     },
 
     /**
@@ -283,10 +324,10 @@ export function createSoundEngine() {
       currentPressureNorm = pressureNorm ?? 0.5;
 
       // ── Generate initial chord progression ──
-      const progression = generateProgression(
+      currentProgression = generateProgression(
         currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
       );
-      progressionPlayer.setProgression(progression, true);
+      progressionPlayer.setProgression(currentProgression, true);
       // Note: the progression player's onChordChange callback will handle
       // setting up the pad, arpeggio, bass, drone, and melody with the first chord.
 
@@ -423,13 +464,31 @@ export function createSoundEngine() {
           subGain.gain.linearRampTo(value, duration);
           break;
 
+        // Percussion reverb wet (weather-driven — fog = wetter, storm = drier)
+        case 'percussionReverbWet':
+          percussionReverb.wet.rampTo(value, duration);
+          break;
+
+        // Delay feedback (pressure-driven — low pressure = smear, high = crisp)
+        case 'delayFeedback':
+          delay.feedback.rampTo(value, duration);
+          break;
+
+        // Stereo width (wind-driven — calm = intimate, gusty = wide)
+        case 'arpeggioWidth':
+          arpeggioWidener.width.rampTo(value, duration);
+          break;
+        case 'melodyWidth':
+          melodyWidener.width.rampTo(value, duration);
+          break;
+
         // Pressure — regenerate progression with new harmonic rhythm
         case 'pressureNorm': {
           currentPressureNorm = value;
-          const prog = generateProgression(
+          currentProgression = generateProgression(
             currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
           );
-          progressionPlayer.setProgression(prog, false); // Queue for next cycle
+          progressionPlayer.setProgression(currentProgression, false); // Queue for next cycle
           break;
         }
 
@@ -450,11 +509,11 @@ export function createSoundEngine() {
           if (key === 'scaleType') currentMode = value;
 
           // Generate a new progression in the new key
-          const prog = generateProgression(
+          currentProgression = generateProgression(
             currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
           );
           // Key/mode changes are musically significant — start immediately
-          progressionPlayer.setProgression(prog, true);
+          progressionPlayer.setProgression(currentProgression, true);
           break;
         }
 
@@ -462,10 +521,10 @@ export function createSoundEngine() {
           const oldCategory = currentWeatherCategory;
           currentWeatherCategory = value;
           const immediate = shouldImmediatelyChange(oldCategory, value);
-          const prog = generateProgression(
+          currentProgression = generateProgression(
             currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
           );
-          progressionPlayer.setProgression(prog, immediate);
+          progressionPlayer.setProgression(currentProgression, immediate);
           break;
         }
 
@@ -571,6 +630,11 @@ export function createSoundEngine() {
       subLowpass.dispose();
       subSaturator.dispose();
       subGain.dispose();
+      // Percussion reverb, pad HPF, stereo wideners
+      percussionReverb.dispose();
+      padHPF.dispose();
+      arpeggioWidener.dispose();
+      melodyWidener.dispose();
     },
   };
 }

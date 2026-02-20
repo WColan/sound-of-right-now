@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import {
   getDiatonicChord, getScaleDegreeNote, getScaleNotes,
   getChordTonesForDegree, voiceLead,
+  buildDominant7Chord, getChordTonesFromSemitones, NOTE_NAMES,
 } from './scale.js';
 import { CATEGORY_TO_MOOD } from './constants.js';
 
@@ -166,6 +167,62 @@ function getHarmonicRhythm(pressureNorm, weatherCategory) {
   return `${measures}m`;
 }
 
+// ── Secondary Dominant Injection ──
+// Probability of inserting a V7/x chord before eligible target degrees.
+// Mood-driven: dramatic moods = more secondary dominants, peaceful = none.
+const SEC_DOM_PROBABILITY = {
+  tense:      0.30,
+  melancholy: 0.20,
+  gentle:     0.12,
+  calm:       0.08,
+  suspended:  0,
+  sparse:     0,
+};
+
+// Target degrees that benefit from secondary dominant preparation.
+// These are the "resolvable" harmonies in tonal music.
+const SEC_DOM_TARGETS = new Set([2, 4, 5, 6]); // ii, IV, V, vi
+
+/**
+ * Build a secondary dominant (V7/x) chord object targeting the given chord.
+ * The secondary dominant is a dominant 7th built a perfect 5th above the
+ * target chord's root — it wants to resolve down to the target.
+ *
+ * IMPORTANT: scaleTones is kept from the original mode so arpeggio/melody
+ * continue playing in-key even while the harmony briefly departs.
+ *
+ * @param {object} targetChord - The chord this V7 resolves to
+ * @param {string[]} originalScaleTones - Scale tones for current root/mode
+ * @returns {object} Secondary dominant chord object
+ */
+function buildSecondaryDominant(targetChord, originalScaleTones) {
+  // A perfect 5th = 7 semitones. The secondary dominant root is 7 semitones
+  // ABOVE the target root (V of x). E.g., target = F (index 5), V/F = C (index 0).
+  const targetRootIdx = NOTE_NAMES.indexOf(targetChord.chordRootName);
+  const secDomRootIdx = (targetRootIdx + 7) % 12;
+  const secDomRootName = NOTE_NAMES[secDomRootIdx];
+
+  // Build the dominant 7th chord: root, M3, P5, m7
+  const notes = buildDominant7Chord(secDomRootName, 4);
+
+  // Chord tones: all instances of the 4 chromatic dom7 semitones across octaves 3-5
+  const DOM7_SEMITONES = [0, 4, 7, 10];
+  const chordTones = getChordTonesFromSemitones(secDomRootName, DOM7_SEMITONES, 3, 5);
+
+  return {
+    degree: null,           // Non-diatonic — no scale degree
+    degreeIndex: null,
+    quality: 'dom7',
+    notes,
+    bassNote: `${secDomRootName}2`,
+    chordTones,
+    scaleTones: originalScaleTones, // UNCHANGED — melody/arpeggio stay in key
+    chordRootName: secDomRootName,
+    isSecondaryDominant: true,  // For debugging / chord display
+    resolvesDegree: targetChord.degree,
+  };
+}
+
 /**
  * Build a chord data object for a given scale degree.
  * Used by both the initial generation and the Markov walker.
@@ -236,10 +293,30 @@ export function generateProgression(root, mode, weatherCategory, pressureNorm) {
   // Build chord objects
   const chords = degrees.map(degree => buildChord(root, mode, degree, qualities));
 
+  // ── Secondary dominant injection ──
+  // After building the diatonic sequence, scan for eligible target chords and
+  // optionally insert a V7/x chord immediately before them.
+  // scaleTones from the first chord represents the full scale (same for all diatonic chords).
+  const secDomProb = SEC_DOM_PROBABILITY[mood] ?? 0;
+  let finalChords = chords;
+
+  if (secDomProb > 0) {
+    const originalScaleTones = chords[0]?.scaleTones ?? getScaleNotes(root, mode, 3, 5);
+    const injected = [];
+    for (const chord of chords) {
+      // Only inject before eligible diatonic targets (not before another secondary dominant)
+      if (SEC_DOM_TARGETS.has(chord.degree) && Math.random() < secDomProb) {
+        injected.push(buildSecondaryDominant(chord, originalScaleTones));
+      }
+      injected.push(chord);
+    }
+    finalChords = injected;
+  }
+
   return {
-    chords,
+    chords: finalChords,
     harmonicRhythm,
-    length: degrees.length,
+    length: finalChords.length,
   };
 }
 

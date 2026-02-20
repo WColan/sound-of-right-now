@@ -113,12 +113,23 @@ canvas#visualizer {
   color: var(--text-secondary);
 }
 
+/* Third line in info display — slightly smaller, dimmer */
+.info-details-sub {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  margin-top: 0.2rem;
+  letter-spacing: 0.06em;
+}
+
 /* Controls - bottom right */
 .controls {
   position: fixed;
   bottom: 2rem;
   right: 2rem;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   transition: opacity 1s ease;
 }
 
@@ -136,6 +147,7 @@ canvas#visualizer {
   cursor: pointer;
   font-family: inherit;
   transition: color 0.3s ease;
+  flex-shrink: 0;
 }
 
 #pause-btn {
@@ -144,8 +156,54 @@ canvas#visualizer {
   line-height: 1;
 }
 
+#share-btn {
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
 .control-btn:hover {
   color: var(--text-secondary);
+}
+
+/* Volume slider */
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 70px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+  cursor: pointer;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  cursor: pointer;
+  border: none;
+}
+
+.volume-slider:hover::-webkit-slider-thumb {
+  background: var(--text-primary);
+}
+
+.volume-slider:hover::-moz-range-thumb {
+  background: var(--text-primary);
 }
 
 /* Location search */
@@ -268,6 +326,12 @@ canvas#visualizer {
   transform: scale(0.5);
 }
 
+/* Chord quality color coding — active dots take the quality color */
+.chord-timeline .dot[data-quality="maj7"].active  { background: rgba(255, 210, 100, 0.9); box-shadow: 0 0 6px rgba(255, 210, 100, 0.5); }
+.chord-timeline .dot[data-quality="min7"].active  { background: rgba(140, 180, 255, 0.9); box-shadow: 0 0 6px rgba(140, 180, 255, 0.5); }
+.chord-timeline .dot[data-quality="dom7"].active  { background: rgba(255, 155, 80, 0.9);  box-shadow: 0 0 6px rgba(255, 155, 80, 0.5); }
+.chord-timeline .dot[data-quality="min7b5"].active { background: rgba(160, 130, 200, 0.9); box-shadow: 0 0 6px rgba(160, 130, 200, 0.5); }
+
 .hidden {
   opacity: 0;
   pointer-events: none;
@@ -282,9 +346,13 @@ canvas#visualizer {
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 1.5rem;
+    gap: 1rem;
     align-items: center;
     white-space: nowrap;
+  }
+
+  .volume-slider {
+    width: 55px;
   }
 
   .info-display {

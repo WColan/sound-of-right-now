@@ -54,6 +54,16 @@ const RAMP_DURATIONS = {
   // Sub-bass bus gain (slow — weather-driven physical impact)
   subBassGain: 15,
 
+  // Percussion reverb wet (slow — category transitions)
+  percussionReverbWet: 8,
+
+  // Delay feedback (slow — pressure changes gradually)
+  delayFeedback: 20,
+
+  // Stereo width (medium — wind changes gradually)
+  arpeggioWidth: 8,
+  melodyWidth: 8,
+
   // Pressure (slow — affects harmonic rhythm)
   pressureNorm: 30,
 

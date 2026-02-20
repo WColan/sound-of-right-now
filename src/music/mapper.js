@@ -15,6 +15,7 @@ import { CATEGORY_TO_MOOD } from './constants.js';
  * @param {number} [options.tideLevel] - Water level in feet (null if inland)
  * @param {number} [options.aqiLevel] - US AQI value (null if unavailable)
  * @param {number} [options.latitude] - For seasonal + hemisphere awareness
+ * @param {number} [options.pressureTrend] - -1 (falling) to +1 (rising); 0 = stable
  * @returns {object} MusicalParams
  */
 export function mapWeatherToMusic(weather, options = {}) {
@@ -188,6 +189,34 @@ export function mapWeatherToMusic(weather, options = {}) {
     return clamp(base + (categoryBoost[category] ?? 0), 0.1, 0.55);
   })();
 
+  // ── Percussion reverb wet — category-driven short reverb tail ──
+  // Storm/rain: drier (snappy hits); fog: wetter (distant smear)
+  const percussionReverbWet = ({ storm: 0.12, rain: 0.15, drizzle: 0.2, fog: 0.35, snow: 0.28, cloudy: 0.22, clear: 0.18 })[category] ?? 0.22;
+
+  // ── Delay feedback — pressure-driven echo smear ──
+  // Low pressure → more feedback (unstable, swirling); high pressure → crisp echo
+  const delayFeedback = (() => {
+    const base = lerp(0.15, 0.35, 1 - pressNorm);
+    return category === 'storm' ? Math.min(base + 0.1, 0.45) : base;
+  })();
+
+  // ── Stereo width — wind-driven spatial expansion ──
+  // Calm = intimate (narrow); gusty = wide and spacious
+  const arpeggioWidth = lerp(0.25, 0.75, windNorm);
+  const melodyWidth = lerp(0.2, 0.6, windNorm);
+
+  // ── Pressure trend — barometric change modulation ──
+  const pressureTrend = clamp(options.pressureTrend ?? 0, -1, 1);
+  // Falling barometer: darken filter, boost sub for anticipation/tension
+  // Rising barometer: slight brightness, clean reverb
+  if (pressureTrend < 0) {
+    const fallStrength = Math.abs(pressureTrend);
+    masterFilterCutoff = clamp(masterFilterCutoff - 500 * fallStrength, 1000, 14000);
+  } else if (pressureTrend > 0) {
+    // Rising pressure: gentle brightness boost (applied to pre-final brightness)
+    padBrightness = clamp(padBrightness + 0.05 * pressureTrend, 0.05, 0.95);
+  }
+
   // ── Melody params ──
   const melodyMood = mapWeatherToMelodyMood(category);
   const melodyBaseVolume = lerp(-22, -12, timeOfDay.brightness);
@@ -237,6 +266,13 @@ export function mapWeatherToMusic(weather, options = {}) {
     droneCutoff,
     // Sub-bass parallel bus
     subBassGain,
+    // Percussion reverb wet level
+    percussionReverbWet,
+    // Delay feedback
+    delayFeedback,
+    // Stereo width
+    arpeggioWidth,
+    melodyWidth,
     timbreProfile,
     // Progression-driving params
     weatherCategory: category,

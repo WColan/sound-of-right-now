@@ -94,12 +94,14 @@ export function createMelodyVoice() {
   /**
    * Generate and schedule a melodic phrase.
    * Called after a slight delay from chord change for call-and-response feel.
+   * @param {number} [probabilityBoost=0] - Additional probability added for contextual moments
    */
-  function generatePhrase() {
+  function generatePhrase(probabilityBoost = 0) {
     const config = MOOD_CONFIG[currentMood] || MOOD_CONFIG.calm;
+    const effectiveProbability = Math.min(config.probability + probabilityBoost, 0.95);
 
     // Roll probability check
-    if (Math.random() > config.probability) return;
+    if (Math.random() > effectiveProbability) return;
 
     // Determine phrase length
     const noteCount = config.minNotes +
@@ -172,14 +174,25 @@ export function createMelodyVoice() {
     /**
      * Called on chord change. Triggers a phrase with a slight delay
      * for a call-and-response feel.
+     *
+     * @param {object} [context] - Optional celestial/progression context for boosts
+     * @param {boolean} [context.isFirstChord] - First chord of a new progression cycle
+     * @param {number}  [context.sunTransition] - 0–1 golden-hour intensity
+     * @param {number}  [context.moonFullness]  - 0–1 moon fullness
      */
-    onChordChange() {
+    onChordChange({ isFirstChord = false, sunTransition = 0, moonFullness = 0 } = {}) {
       clearPhraseEvents();
+
+      // Build contextual probability boost for peak moments
+      let boost = 0;
+      if (isFirstChord) boost += 0.25;           // New progression cycle — fresh phrase
+      boost += sunTransition * 0.3;               // Golden hour — lyrical
+      boost += moonFullness * 0.1;                // Full moon — slightly more active at night
 
       // Delay phrase start by 0.5-1.5 beats for call-and-response
       const delaySec = Tone.Time('4n').toSeconds() * (0.5 + Math.random());
       const eventId = Tone.getTransport().scheduleOnce(() => {
-        generatePhrase();
+        generatePhrase(boost);
       }, Tone.now() + delaySec);
 
       phraseEvents.push(eventId);
