@@ -51,6 +51,9 @@ const RAMP_DURATIONS = {
   // Drone filter (slow — sub-bass tonality shifts with pressure/category)
   droneCutoff: 20,
 
+  // Sub-bass bus gain (slow — weather-driven physical impact)
+  subBassGain: 15,
+
   // Pressure (slow — affects harmonic rhythm)
   pressureNorm: 30,
 

@@ -20,9 +20,12 @@ import {
  * - Melody voice (occasional phrases triggered on chord changes)
  * - Binaural panning (voices spread across stereo field)
  * - Master velocity gain node (time-of-day volume scaling)
+ * - Parallel sub-bass bus (bass + drone tapped before chorus for physical thump)
  *
  * Audio graph:
  *   [Voices] -> [Panners] -> [Chorus] -> [Delay] -> [Reverb] -> [Master Filter] -> [Master Velocity] -> [Limiter] -> [Analyser] -> [Destination]
+ *                    ↘ (bass + drone panners also connect here)
+ *                    [Sub Bus] -> [Sub Lowpass 100Hz] -> [Sub Saturator] -> [Sub Gain] -> [Master Velocity]
  */
 export function createSoundEngine() {
   // Shared effects
@@ -51,6 +54,28 @@ export function createSoundEngine() {
 
   // Master velocity gain — time-of-day volume scaling
   const masterVelocity = new Tone.Gain(1);
+
+  // ── Parallel sub-bass bus ──
+  // Bass and drone panners connect here in addition to the main chorus chain.
+  // This path bypasses chorus/reverb (which smear phase at low frequencies),
+  // producing a clean, punchy sub signal that is felt rather than heard.
+  const subBus = new Tone.Gain(1);
+  const subLowpass = new Tone.Filter({
+    frequency: 100,
+    type: 'lowpass',
+    rolloff: -48,  // Very steep — nothing above 100 Hz bleeds through
+  });
+  // Chebyshev order 2 adds only the 2nd harmonic (2× fundamental).
+  // Makes 30 Hz drone content audible at 60 Hz on smaller speakers,
+  // while still providing the felt sub on capable speakers/subwoofers.
+  const subSaturator = new Tone.Chebyshev(2);
+  const subGain = new Tone.Gain(0.35); // ~-9 dB; weather-driven via rampParam
+
+  // Chain the sub bus: subBus → subLowpass → subSaturator → subGain → masterVelocity
+  subBus.connect(subLowpass);
+  subLowpass.connect(subSaturator);
+  subSaturator.connect(subGain);
+  subGain.connect(masterVelocity);
 
   const limiter = new Tone.Limiter(-3);
 
@@ -95,12 +120,14 @@ export function createSoundEngine() {
 
   bass.output.connect(bassPanner);
   bassPanner.connect(chorus);
+  bassPanner.connect(subBus);  // Second connection — parallel sub-bass tap
 
   texture.output.connect(texturePanner);
   texturePanner.connect(chorus);
 
   drone.output.connect(dronePanner);
   dronePanner.connect(chorus);
+  dronePanner.connect(subBus);  // Second connection — parallel sub-bass tap
 
   melody.output.connect(melodyPanner);
   melodyPanner.connect(chorus);
@@ -195,7 +222,7 @@ export function createSoundEngine() {
     voices: { pad, arpeggio, bass, texture, percussion, drone, melody },
 
     // Expose effects for direct control
-    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter },
+    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain },
 
     // Expose panners
     panners: { padPanner, arpeggioPanner, bassPanner, texturePanner, dronePanner, melodyPanner },
@@ -391,6 +418,11 @@ export function createSoundEngine() {
           masterVelocity.gain.linearRampTo(value, duration);
           break;
 
+        // Sub-bass bus gain (weather-driven physical impact)
+        case 'subBassGain':
+          subGain.gain.linearRampTo(value, duration);
+          break;
+
         // Pressure — regenerate progression with new harmonic rhythm
         case 'pressureNorm': {
           currentPressureNorm = value;
@@ -534,6 +566,11 @@ export function createSoundEngine() {
       limiter.dispose();
       analyser.dispose();
       waveformAnalyser.dispose();
+      // Sub-bass bus
+      subBus.dispose();
+      subLowpass.dispose();
+      subSaturator.dispose();
+      subGain.dispose();
     },
   };
 }

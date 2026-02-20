@@ -176,6 +176,18 @@ export function mapWeatherToMusic(weather, options = {}) {
   // ── Drone volume (always present, louder at low pressure) ──
   const droneVolume = lerp(-34, -26, 1 - pressNorm);
 
+  // ── Sub-bass gain (parallel bus physical impact) ──
+  // Low pressure systems carry more sub energy; stormy conditions maximize rumble.
+  // Range 0.1–0.55 is conservative — sub buses can easily overwhelm a mix.
+  const subBassGain = (() => {
+    const base = lerp(0.2, 0.45, 1 - pressNorm); // Low pressure → more sub
+    const categoryBoost = {
+      storm: 0.2, rain: 0.1, drizzle: 0.05, fog: 0.05,
+      cloudy: 0, clear: -0.05, snow: 0.05,
+    };
+    return clamp(base + (categoryBoost[category] ?? 0), 0.1, 0.55);
+  })();
+
   // ── Melody params ──
   const melodyMood = mapWeatherToMelodyMood(category);
   const melodyBaseVolume = lerp(-22, -12, timeOfDay.brightness);
@@ -223,6 +235,8 @@ export function mapWeatherToMusic(weather, options = {}) {
     textureAutoFilterDepth,
     // Drone filter
     droneCutoff,
+    // Sub-bass parallel bus
+    subBassGain,
     timbreProfile,
     // Progression-driving params
     weatherCategory: category,
