@@ -343,6 +343,16 @@ export function createProgressionPlayer(callbacks) {
       return { index: chordIndex, total: currentProgression.chords.length };
     },
 
+    /**
+     * Restart the chord loop after a pause. Resumes from the current position
+     * in the current progression. Called by engine.resume().
+     */
+    start() {
+      if (currentProgression) {
+        startLoop();
+      }
+    },
+
     stop() {
       if (chordLoop) {
         chordLoop.stop();
