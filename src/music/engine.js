@@ -469,7 +469,24 @@ export function createSoundEngine() {
       drone.stop();
       melody.stop();
       progressionPlayer.stop();
-      Tone.getTransport().stop();
+      // pause() preserves Transport clock position so resume() continues mid-phrase.
+      // dispose() will still call stop() which resets position, but that's fine
+      // since the engine is being torn down entirely.
+      Tone.getTransport().pause();
+    },
+
+    /**
+     * Resume after a stop() call. Restarts the autonomous voice loops and the
+     * Transport without resetting position — music continues from where it paused.
+     * bass/drone/melody are note-triggered by the progression player, so they
+     * resume naturally when the next chord fires.
+     */
+    resume() {
+      arpeggio.start();
+      texture.start();
+      percussion.start();
+      progressionPlayer.start();
+      Tone.getTransport().start();
     },
 
     dispose() {

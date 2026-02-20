@@ -266,3 +266,44 @@ canvas#visualizer {
   opacity: 0;
   pointer-events: none;
 }
+
+/* ── Mobile layout ── */
+@media (max-width: 600px) {
+  /* Stack all three panels vertically, centered above the landscape */
+  .controls {
+    bottom: 1.5rem;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .info-display {
+    bottom: 4.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    width: calc(100vw - 3rem);
+  }
+
+  .chord-display {
+    bottom: 8rem;
+    /* left: 50% + translateX(-50%) already set on desktop — no change */
+  }
+
+  /* Location search: full-width, anchored above controls */
+  .location-search {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 4rem;
+    width: calc(100vw - 3rem);
+  }
+
+  .location-search input {
+    width: 100%;
+  }
+}

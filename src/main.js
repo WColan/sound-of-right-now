@@ -21,6 +21,7 @@ let visualizer = null;
 let currentTideData = null;
 let currentAqiData = null;
 let currentLatitude = null;
+let isPlaying = true; // Track play/pause state for the pause button
 
 // Clean up on HMR to prevent duplicate audio contexts
 if (import.meta.hot) {
@@ -134,6 +135,10 @@ async function startForLocation(latitude, longitude, locationName) {
     engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
     // Recreate interpolator too — it closes over the old (now-disposed) engine
     interpolator = createInterpolator(engine);
+    // New engine always starts playing — reset pause button accordingly
+    isPlaying = true;
+    const pauseBtn = document.getElementById('pause-btn');
+    if (pauseBtn) pauseBtn.textContent = 'pause';
   }
 
   // Stop existing fetchers
@@ -201,6 +206,19 @@ async function boot(latitude, longitude, locationName) {
     await startForLocation(result.latitude, result.longitude, name);
   });
 
+  // Wire pause/play button
+  const pauseBtn = document.getElementById('pause-btn');
+  pauseBtn.addEventListener('click', () => {
+    if (isPlaying) {
+      engine.stop();
+      pauseBtn.textContent = 'play';
+    } else {
+      engine.resume();
+      pauseBtn.textContent = 'pause';
+    }
+    isPlaying = !isPlaying;
+  });
+
   // Create visualizer
   visualizer = createVisualizer(canvas, engine.analyser, engine.waveformAnalyser);
   visualizer.start();
@@ -242,6 +260,13 @@ function init() {
     listenBtn.disabled = true;
 
     try {
+      // iOS 17+: request 'playback' audio session so audio plays through the
+      // mute/silent switch and continues when the screen locks (same category
+      // as Spotify / Apple Music). No-op on other platforms.
+      if ('audioSession' in navigator) {
+        navigator.audioSession.type = 'playback';
+      }
+
       await Tone.start();
 
       // Try browser geolocation
