@@ -3,6 +3,7 @@ import { createSoundEngine } from './music/engine.js';
 import { mapWeatherToMusic } from './music/mapper.js';
 import { createInterpolator } from './music/interpolator.js';
 import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
+import { getMoonriseTime, getMoonsetTime } from './weather/moon.js';
 import { createWeatherFetcher } from './weather/fetcher.js';
 import { createTideFetcher } from './weather/tides.js';
 import { createAirQualityFetcher } from './weather/airquality.js';
@@ -47,6 +48,11 @@ function onWeatherUpdate(weather) {
   interpolator.update(musicalParams);
   display.update(weather, musicalParams, currentTideData);
 
+  // Compute moonrise/moonset from phase + today's sunrise/sunset
+  const now = new Date();
+  const moonrise = getMoonriseTime(now, weather.sunrise, weather.sunset);
+  const moonset  = getMoonsetTime(now, weather.sunrise, weather.sunset);
+
   visualizer.updateState({
     timeOfDay: musicalParams._meta.timeOfDay,
     weatherCategory: musicalParams._meta.category,
@@ -60,6 +66,11 @@ function onWeatherUpdate(weather) {
     cloudCover: weather.cloudCover ?? 0,
     filterWarmth: musicalParams._meta.filterWarmth ?? 0,
     aqiNorm: musicalParams._meta.aqiNorm ?? 0,
+    // Celestial positioning
+    sunrise: weather.sunrise,
+    sunset: weather.sunset,
+    moonrise,
+    moonset,
   });
 
   // ── Detailed logging: data inputs → sound mappings ──
@@ -110,6 +121,20 @@ async function startForLocation(latitude, longitude, locationName) {
 
   // Store latitude for seasonal awareness
   currentLatitude = latitude;
+
+  // ── Tear down old audio engine ──
+  // Tone.js audio nodes are permanently destroyed by dispose() and cannot be
+  // restarted, so we recreate the engine from scratch on each location change.
+  // This prevents accumulation of orphaned synths, sequences, and LFOs — the
+  // source of the glitching heard after changing location more than once.
+  if (engine) {
+    engine.dispose();
+    engine = createSoundEngine();
+    engine.start({ bpm: 72 });
+    engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+    // Recreate interpolator too — it closes over the old (now-disposed) engine
+    interpolator = createInterpolator(engine);
+  }
 
   // Stop existing fetchers
   if (weatherFetcher) weatherFetcher.stop();

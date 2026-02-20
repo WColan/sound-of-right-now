@@ -159,6 +159,31 @@ export function createPadVoice() {
       synthB.set({ oscillator: { spread: cents } });
     },
 
+    /**
+     * Apply a weather timbre profile — changes oscillator type, harmonic count,
+     * spread, and envelope character. Takes effect on the next note trigger.
+     *
+     *   warm   — Lush/slow: fat detuned sines, wide spread, long bloom
+     *   cool   — Balanced: standard fatsine, moderate settings (the default)
+     *   cold   — Crystalline: pure sine, no spread, very slow fade
+     *   stormy — Raw/agitated: sawtooth harmonics, short attack, wide unstable spread
+     */
+    setTimbreProfile(profile) {
+      const profiles = {
+        warm:   { type: 'fatsine',     count: 4, spread: 22, attack: 4,   release: 10 },
+        cool:   { type: 'fatsine',     count: 3, spread: 12, attack: 3,   release: 8  },
+        cold:   { type: 'sine',        count: 1, spread: 0,  attack: 5,   release: 12 },
+        stormy: { type: 'fatsawtooth', count: 2, spread: 30, attack: 1.5, release: 6  },
+      };
+      const p = profiles[profile] || profiles.cool;
+      const opts = {
+        oscillator: { type: p.type, count: p.count, spread: p.spread },
+        envelope:   { attack: p.attack, release: p.release },
+      };
+      synthA.set(opts);
+      synthB.set(opts);
+    },
+
     stop() {
       synthA.releaseAll();
       synthB.releaseAll();

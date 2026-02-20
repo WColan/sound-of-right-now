@@ -193,6 +193,29 @@ export function createMelodyVoice() {
       filter.frequency.linearRampTo(freq, rampTime);
     },
 
+    /**
+     * Apply a weather timbre profile — changes oscillator type and envelope.
+     * Takes effect on the next melody phrase.
+     *
+     *   warm   — Triangle with slow bloom: gentle, flute-like but lush
+     *   cool   — Triangle (default): clean, balanced
+     *   cold   — Sine: pure, thin, crystalline
+     *   stormy — Sawtooth: bright, edgy, urgent
+     */
+    setTimbreProfile(profile) {
+      const profiles = {
+        warm:   { type: 'triangle', attack: 0.15, release: 2.5 },
+        cool:   { type: 'triangle', attack: 0.10, release: 2.0 },
+        cold:   { type: 'sine',     attack: 0.05, release: 1.5 },
+        stormy: { type: 'sawtooth', attack: 0.03, release: 0.8 },
+      };
+      const p = profiles[profile] || profiles.cool;
+      synth.set({
+        oscillator: { type: p.type },
+        envelope:   { attack: p.attack, release: p.release },
+      });
+    },
+
     stop() {
       clearPhraseEvents();
       synth.triggerRelease();

@@ -111,6 +111,18 @@ export function createTextureVoice() {
       filter.frequency.linearRampTo(freq, rampTime);
     },
 
+    /**
+     * Set the autoFilter sweep rate and depth.
+     * rate controls how fast the filter sweeps; depth controls how wide.
+     * @param {number|null} rate  - Hz (e.g. 0.05 = slow, 0.4 = fast)
+     * @param {number|null} depth - 0-1 (e.g. 0.3 = shallow, 0.9 = deep)
+     * @param {number} rampTime   - Seconds to ramp
+     */
+    setAutoFilter(rate, depth, rampTime = 8) {
+      if (rate != null) autoFilter.frequency.rampTo(rate, rampTime);
+      if (depth != null) autoFilter.depth.rampTo(depth, rampTime);
+    },
+
     /** Enable/disable rain drop texture */
     setRain(enabled, intensity = 0.5) {
       if (enabled) {

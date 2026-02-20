@@ -44,6 +44,13 @@ const RAMP_DURATIONS = {
   // Rhythm (medium)
   rhythmDensity: 10,
 
+  // Texture atmosphere sweep (medium — wind changes gradually)
+  textureAutoFilterRate:  8,
+  textureAutoFilterDepth: 8,
+
+  // Drone filter (slow — sub-bass tonality shifts with pressure/category)
+  droneCutoff: 20,
+
   // Pressure (slow — affects harmonic rhythm)
   pressureNorm: 30,
 
@@ -59,6 +66,7 @@ const DISCRETE_PARAMS = new Set([
   'noiseType',
   'padSpread',
   'noteInterval',
+  'timbreProfile',      // Oscillator type + envelope character — snaps at next note
   // Progression-driving discrete params
   'weatherCategory',
   'arpeggioRhythmPattern',
@@ -130,6 +138,16 @@ export function createInterpolator(engine) {
     /** Get the current parameter state */
     get currentParams() {
       return currentParams;
+    },
+
+    /**
+     * Reset interpolation state. Call before connecting this interpolator to
+     * a freshly-created engine so the next update() applies immediately
+     * (snap-apply) rather than ramping from the old location's values.
+     */
+    reset() {
+      currentParams = null;
+      isFirstUpdate = true;
     },
   };
 }

@@ -25,6 +25,7 @@ export async function fetchWeather(latitude, longitude) {
     longitude: longitude.toFixed(4),
     current: [
       'temperature_2m',
+      'apparent_temperature',     // Feels-like (wind chill / heat index)
       'relative_humidity_2m',
       'surface_pressure',
       'wind_speed_10m',
@@ -52,6 +53,7 @@ export async function fetchWeather(latitude, longitude) {
 
     return {
       temperature: current.temperature_2m,
+      apparentTemperature: current.apparent_temperature ?? current.temperature_2m,
       humidity: current.relative_humidity_2m,
       pressure: current.surface_pressure,
       windSpeed: current.wind_speed_10m,

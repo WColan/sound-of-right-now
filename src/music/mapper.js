@@ -2,6 +2,7 @@ import { categorizeWeatherCode } from '../weather/codes.js';
 import { getMoonPhase, getMoonFullness } from '../weather/moon.js';
 import { getSeasonalFactor } from '../weather/season.js';
 import { MODE_SPECTRUM } from './scale.js';
+import { CATEGORY_TO_MOOD } from './constants.js';
 
 /**
  * Pure function: WeatherState → MusicalParams.
@@ -29,24 +30,46 @@ export function mapWeatherToMusic(weather, options = {}) {
   const seasonalFactor = getSeasonalFactor(now, options.latitude ?? 40);
 
   // Temperature → mode + tempo + root
-  const { rootNote, scaleType } = mapTemperature(weather.temperature);
+  // Harmonic mode/root use apparent temperature (feels-like) — wind chill and heat index
+  // reflect the body's actual experience, which is what the music should match.
+  // BPM stays tied to the physical thermometer: physical pace, not perceived comfort.
+  const { rootNote, scaleType } = mapTemperature(weather.apparentTemperature ?? weather.temperature);
   const bpm = clamp(55 + weather.temperature * 0.8, 50, 110);
 
-  // Humidity → reverb
+  // Humidity → reverb + pad brightness
+  // Thick humid air feels heavier/murkier; dry air feels crisp and open.
   const humNorm = weather.humidity / 100;
   let reverbDecay = lerp(1.5, 10, humNorm);
   let reverbWet = lerp(0.1, 0.65, humNorm);
+  // Subtle brightness shift: dry (0%) = +0.08 brighter; very humid (100%) = −0.08 darker
+  const humidityBrightnessMod = lerp(0.08, -0.08, humNorm);
 
   // Pressure → bass depth (980-1050 hPa range)
   const pressNorm = inverseLerp(980, 1050, clamp(weather.pressure, 980, 1050));
   const bassCutoff = lerp(150, 800, pressNorm);
   const bassVolume = lerp(-10, -18, pressNorm);
 
-  // Wind speed → rhythmic density
+  // Pressure + category → drone filter cutoff
+  // The drone's sub-bass filter (normally 200 Hz) opens/closes with conditions:
+  // fog = wide open (drone becomes an audible hum), snow = very narrow (cold, distant),
+  // storm = open (rumble bleeds through), high pressure = tight (felt, not heard).
+  const droneCutoff = (() => {
+    if (category === 'fog')   return 350;
+    if (category === 'snow')  return 100;
+    if (category === 'storm') return 300;
+    return lerp(120, 250, 1 - pressNorm); // low pressure → 250 Hz, high pressure → 120 Hz
+  })();
+
+  // Wind speed → rhythmic density + texture sweep
   const windNorm = clamp(weather.windSpeed / 50, 0, 1);
   const noteInterval = selectFromRange(['1m', '2n', '4n', '8n', '16n'], windNorm);
   const rhythmDensity = lerp(0.05, 0.6, windNorm);
   const arpeggioVolume = lerp(-26, -14, windNorm);
+  // Windier conditions create faster, more dramatic atmospheric texture sweeps.
+  // Calm (windNorm=0): 0.05 Hz slow drift, 0.3 depth (gentle)
+  // Gusty (windNorm=1): 0.4 Hz fast churn, 0.9 depth (dramatic)
+  const textureAutoFilterRate  = lerp(0.05, 0.4, windNorm);
+  const textureAutoFilterDepth = lerp(0.3,  0.9, windNorm);
 
   // Wind direction → panning + pattern type
   const percussionPan = Math.sin((weather.windDirection * Math.PI) / 180);
@@ -63,13 +86,25 @@ export function mapWeatherToMusic(weather, options = {}) {
   masterFilterCutoff = clamp(masterFilterCutoff + seasonalShift * 1000, 1000, 14000);
   textureFilterCutoff = clamp(textureFilterCutoff + seasonalShift * 300, 200, 8000);
 
+  // Cloud cover → brightness dimming
+  // Previously fetched but unused. Full overcast dims pad brightness by up to 0.25
+  // and cuts the master filter by up to 30% — making overcast days audibly greyer.
+  const cloudNorm = clamp((weather.cloudCover ?? 0) / 100, 0, 1);
+  const cloudDimming = cloudNorm * 0.25;
+  padBrightness = clamp(padBrightness - cloudDimming, 0.05, 0.95);
+  masterFilterCutoff = clamp(masterFilterCutoff * (1 - cloudDimming * 0.3), 1000, 14000);
+
   // Moon phase → modulation
   const lfoDepth = lerp(0.1, 0.9, moonFullness);
   const lfoRate = lerp(0.02, 0.12, moonFullness);
   const chorusDepth = lerp(0.1, 0.7, moonFullness);
 
   // Weather condition → sound palette
-  const padSpread = palette.padSpread ?? 15;
+  // Pad spread is base from the palette, boosted by wind speed.
+  // Gusty winds create a shimmery, unstable feel — audible as wider oscillator detune.
+  const basePadSpread = palette.padSpread ?? 15;
+  const windPadBoost = lerp(0, 8, windNorm); // up to +8 cents in strong wind
+  const padSpread = clamp(basePadSpread + windPadBoost, 8, 38);
   const textureVolume = palette.textureVolume;
   const noiseType = palette.noiseType;
   const arpeggioOctave = palette.arpeggioOctave || 4;
@@ -86,6 +121,9 @@ export function mapWeatherToMusic(weather, options = {}) {
     // Golden-hour warmth: reduce high frequencies
     masterFilterCutoff *= (1 - filterWarmth * 0.2);
   }
+
+  // Humidity brightness: apply after all other brightness modifiers
+  finalPadBrightness = clamp(finalPadBrightness + humidityBrightnessMod, 0.05, 0.95);
 
   // ── AQI haze effect ──
   const aqiNorm = options.aqiLevel != null
@@ -122,6 +160,18 @@ export function mapWeatherToMusic(weather, options = {}) {
   // ── Progression-driving params ──
   const arpeggioRhythmPattern = mapWeatherToArpeggioRhythm(category);
   const percussionPattern = mapWeatherToPercussionPattern(category);
+
+  // ── Timbre profile ──
+  // Drives oscillator type, harmonic count, and envelope character across voices.
+  // Warm sunny days bloom slowly with rich harmonics; cold days are crystalline;
+  // storms are raw and agitated. Uses apparent temperature for felt experience.
+  const timbreProfile = (() => {
+    const felt = weather.apparentTemperature ?? weather.temperature;
+    if (category === 'storm' || (category === 'rain' && felt < 10)) return 'stormy';
+    if (felt >= 18 && (category === 'clear' || category === 'cloudy')) return 'warm';
+    if (felt < 5) return 'cold';
+    return 'cool';
+  })();
 
   // ── Drone volume (always present, louder at low pressure) ──
   const droneVolume = lerp(-34, -26, 1 - pressNorm);
@@ -168,6 +218,12 @@ export function mapWeatherToMusic(weather, options = {}) {
     globalVelocityScale,
     isRaining,
     rainIntensity,
+    // Texture atmosphere modulation
+    textureAutoFilterRate,
+    textureAutoFilterDepth,
+    // Drone filter
+    droneCutoff,
+    timbreProfile,
     // Progression-driving params
     weatherCategory: category,
     pressureNorm: pressNorm,
@@ -356,18 +412,8 @@ function mapWeatherToPercussionPattern(category) {
 
 // --- Melody Mood Mapping ---
 
-const CATEGORY_TO_MELODY_MOOD = {
-  clear:   'calm',
-  cloudy:  'gentle',
-  fog:     'suspended',
-  drizzle: 'melancholy',
-  rain:    'melancholy',
-  snow:    'sparse',
-  storm:   'tense',
-};
-
 function mapWeatherToMelodyMood(category) {
-  return CATEGORY_TO_MELODY_MOOD[category] || 'calm';
+  return CATEGORY_TO_MOOD[category] || 'calm';
 }
 
 // --- Utility Functions ---

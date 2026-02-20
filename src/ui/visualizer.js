@@ -66,6 +66,11 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     cloudCover: 0,
     filterWarmth: 0,
     aqiNorm: 0,
+    // Celestial timing (Date objects)
+    sunrise: null,
+    sunset: null,
+    moonrise: null,
+    moonset: null,
   };
 
   // Particles
@@ -265,12 +270,102 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     }
   }
 
+  /**
+   * Compute the canvas (x, y) for a celestial body given its rise/set times.
+   * The body traces a dome arc: rises left (~15% from left edge), peaks at center-top,
+   * sets right (~85% from left). Returns null if the body is below the horizon.
+   *
+   * @param {Date|null} rise  - Rise time
+   * @param {Date|null} set   - Set time
+   * @param {number}    topFraction - How high the peak reaches (0=top edge, 1=horizon)
+   * @returns {{ x: number, y: number, t: number }|null}
+   */
+  function celestialPosition(rise, set, topFraction = 0.12) {
+    if (!rise || !set) return null;
+
+    const now = Date.now();
+    const riseMs = rise.getTime();
+    const setMs = set.getTime();
+
+    if (now < riseMs || now > setMs) return null; // Below horizon
+
+    const t = (now - riseMs) / (setMs - riseMs); // 0 (rise) → 1 (set)
+
+    // Horizontal: rises at ~15% from left, sets at ~85% from left
+    const x = width * (0.15 + t * 0.7);
+
+    // Vertical: sine arc — sin(0)=0 at horizon, sin(π/2)=1 at peak, sin(π)=0 at horizon
+    // topFraction controls how high the peak is as a fraction of sky height (canvas top = 0)
+    const skyHeight = height * 0.68; // Landscape baseline
+    const peakY = height * topFraction;
+    const horizonY = skyHeight * 0.08; // Slightly above landscape
+
+    // Arc: y = horizonY at t=0 and t=1, peaks at peakY at t=0.5
+    const sinArc = Math.sin(t * Math.PI);
+    const y = horizonY + (peakY - horizonY) * sinArc;
+
+    return { x, y, t };
+  }
+
+  function drawSun() {
+    if (state.brightness < 0.15) return; // Sun not visible at night
+
+    const pos = celestialPosition(state.sunrise, state.sunset, 0.10);
+    if (!pos) return;
+
+    const { x: sunX, y: sunY, t } = pos;
+    const sunR = 28;
+
+    // Sun alpha: fade in near horizon (t near 0 or 1) and at low brightness
+    const horizonFade = Math.min(t * 6, 1) * Math.min((1 - t) * 6, 1); // Fade within first/last 1/6
+    const sunAlpha = clamp(horizonFade * state.brightness * 1.2, 0, 1);
+
+    // Sun color shifts with time of day
+    // Near horizon (t < 0.15 or t > 0.85): deep orange-red
+    // Midday: bright warm yellow-white
+    const sunR_col = Math.round(255);
+    const sunG_col = Math.round(lerp(120, 255, horizonFade));  // Orange→Yellow
+    const sunB_col = Math.round(lerp(20, 200, horizonFade));   // Red-orange→White
+
+    // Weather mutes the sun (storm/fog = faint and diffuse)
+    const weatherAttenuation = { clear: 1.0, cloudy: 0.6, fog: 0.3, drizzle: 0.5, rain: 0.4, snow: 0.5, storm: 0.2 };
+    const attenuation = weatherAttenuation[state.weatherCategory] ?? 1.0;
+    const finalAlpha = sunAlpha * attenuation;
+
+    if (finalAlpha < 0.02) return;
+
+    // Outer atmospheric glow (large, very diffuse)
+    const glowRadius = sunR * (state.weatherCategory === 'clear' ? 5 : 8);
+    const outerGlow = ctx.createRadialGradient(sunX, sunY, sunR * 0.5, sunX, sunY, glowRadius);
+    outerGlow.addColorStop(0, `rgba(${sunR_col}, ${sunG_col}, ${sunB_col}, ${finalAlpha * 0.25})`);
+    outerGlow.addColorStop(1, `rgba(${sunR_col}, ${sunG_col}, 0, 0)`);
+    ctx.fillStyle = outerGlow;
+    ctx.fillRect(sunX - glowRadius, sunY - glowRadius, glowRadius * 2, glowRadius * 2);
+
+    // Inner corona glow
+    const coronaRadius = sunR * 2.5;
+    const coronaGlow = ctx.createRadialGradient(sunX, sunY, sunR * 0.8, sunX, sunY, coronaRadius);
+    coronaGlow.addColorStop(0, `rgba(${sunR_col}, ${sunG_col}, ${sunB_col}, ${finalAlpha * 0.5})`);
+    coronaGlow.addColorStop(1, `rgba(${sunR_col}, ${sunG_col}, 0, 0)`);
+    ctx.fillStyle = coronaGlow;
+    ctx.fillRect(sunX - coronaRadius, sunY - coronaRadius, coronaRadius * 2, coronaRadius * 2);
+
+    // Sun disc
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${sunR_col}, ${sunG_col}, ${sunB_col}, ${finalAlpha * 0.95})`;
+    ctx.fill();
+  }
+
   function drawMoon() {
     if (state.brightness > 0.6) return; // Moon not visible during bright day
 
     const moonAlpha = Math.max(0, (0.6 - state.brightness) * 2) * 0.9;
-    const moonX = width * 0.75;
-    const moonY = height * 0.15;
+
+    // Use arc position if moonrise/moonset are available, otherwise fall back to fixed position
+    const pos = celestialPosition(state.moonrise, state.moonset, 0.12);
+    const moonX = pos ? pos.x : width * 0.75;
+    const moonY = pos ? pos.y : height * 0.15;
     const moonR = 25;
 
     // Glow
@@ -621,6 +716,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     // Full redraw
     drawSky();
     drawStars();
+    drawSun();
     drawMoon();
     drawAurora();
     drawClouds();
@@ -634,6 +730,14 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   }
 
   // --- Utilities ---
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
 
   function adjustColor(color, shift) {
     return [

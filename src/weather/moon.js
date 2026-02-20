@@ -44,6 +44,56 @@ export function getMoonFullness(date = new Date()) {
 }
 
 /**
+ * Get the approximate moonrise time for a given date.
+ *
+ * The moon rises roughly 50 minutes later each day. A new moon (phase ≈ 0) rises near
+ * sunrise; a full moon (phase ≈ 0.5) rises near sunset; phases in between interpolate.
+ * This is an artistic approximation — accurate enough for visual purposes.
+ *
+ * @param {Date} [date]
+ * @param {Date} [sunrise] - Today's sunrise (defaults to 6 AM)
+ * @param {Date} [sunset]  - Today's sunset  (defaults to 6 PM)
+ * @returns {Date} Approximate moonrise time
+ */
+export function getMoonriseTime(date = new Date(), sunrise, sunset) {
+  const phase = getMoonPhase(date);
+
+  // Default sunrise/sunset if not provided
+  const sr = sunrise || new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0);
+  const ss = sunset  || new Date(date.getFullYear(), date.getMonth(), date.getDate(), 18, 0);
+
+  // New moon (phase=0): rises with sunrise
+  // Full moon (phase=0.5): rises with sunset
+  // Last quarter (phase=0.75): rises around midnight
+  // Interpolate: moonrise = sunrise + phase * ~24h, but wrapped to meaningful range
+  const dayMs = 24 * 60 * 60 * 1000;
+  const srMs = sr.getTime();
+  const ssMs = ss.getTime();
+
+  // Phase 0 = new moon rises at sunrise; phase 0.5 = full moon rises at sunset
+  // Map phase 0→1 to a moonrise offset across the day (new→sunset→midnight→sunrise)
+  const riseOffsetMs = phase * dayMs;
+  const moonriseMs = srMs + riseOffsetMs;
+
+  return new Date(moonriseMs);
+}
+
+/**
+ * Get the approximate moonset time for a given date.
+ * The moon sets approximately 12 hours after it rises (half-orbit visibility).
+ *
+ * @param {Date} [date]
+ * @param {Date} [sunrise] - Today's sunrise
+ * @param {Date} [sunset]  - Today's sunset
+ * @returns {Date} Approximate moonset time
+ */
+export function getMoonsetTime(date = new Date(), sunrise, sunset) {
+  const moonrise = getMoonriseTime(date, sunrise, sunset);
+  // Moon is above horizon for roughly half a lunar day (~12.4 hours)
+  return new Date(moonrise.getTime() + 12.4 * 60 * 60 * 1000);
+}
+
+/**
  * Get a human-readable moon phase name.
  * @param {Date} [date]
  * @returns {string}

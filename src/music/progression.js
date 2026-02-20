@@ -3,6 +3,7 @@ import {
   getDiatonicChord, getScaleDegreeNote, getScaleNotes,
   getChordTonesForDegree, voiceLead,
 } from './scale.js';
+import { CATEGORY_TO_MOOD } from './constants.js';
 
 // ── Diatonic chord qualities for each mode ──
 // Built by stacking 3rds on each scale degree.
@@ -14,17 +15,6 @@ const DIATONIC_CHORDS = {
   aeolian:    ['min7', 'min7b5', 'maj7', 'min7', 'min7', 'maj7', 'dom7'],
   lydian:     ['maj7', 'dom7', 'min7', 'min7', 'min7b5', 'maj7', 'min7'],
   locrian:    ['min7b5', 'maj7', 'min7', 'min7', 'maj7', 'dom7', 'min7'],
-};
-
-// ── Weather category → mood key ──
-const CATEGORY_TO_MOOD = {
-  clear:   'calm',
-  cloudy:  'gentle',
-  fog:     'suspended',
-  drizzle: 'melancholy',
-  rain:    'melancholy',
-  snow:    'sparse',
-  storm:   'tense',
 };
 
 // ── Markov transition weights ──
@@ -259,8 +249,12 @@ export function generateProgression(root, mode, weatherCategory, pressureNorm) {
  */
 export function shouldImmediatelyChange(oldCategory, newCategory) {
   if (oldCategory === newCategory) return false;
-  // Storm onset/offset is dramatic
+  // Storm onset/offset is always dramatic — immediate harmonic shift
   if (newCategory === 'storm' || oldCategory === 'storm') return true;
+  // Fog creates a distinct suspended harmonic world — onset/offset should feel immediate
+  if (newCategory === 'fog' || oldCategory === 'fog') return true;
+  // Snow has a very distinct sparse/ethereal palette — don't make the listener wait 30s
+  if (newCategory === 'snow' || oldCategory === 'snow') return true;
   return false;
 }
 

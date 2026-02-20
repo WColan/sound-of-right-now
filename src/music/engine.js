@@ -237,6 +237,8 @@ export function createSoundEngine() {
         arpeggioPan, melodyPan,
         globalVelocityScale,
         tideLevel,
+        textureAutoFilterRate, textureAutoFilterDepth,
+        droneCutoff,
         // Progression params
         weatherCategory, pressureNorm,
         arpeggioRhythmPattern, percussionPattern,
@@ -283,6 +285,7 @@ export function createSoundEngine() {
       texture.setNoiseType(noiseType || 'pink');
       texture.noise.volume.value = textureVolume ?? -24;
       texture.filter.frequency.value = textureFilterCutoff ?? 2000;
+      texture.setAutoFilter(textureAutoFilterRate ?? 0.08, textureAutoFilterDepth ?? 0.6);
       texture.start();
 
       // Percussion
@@ -298,10 +301,18 @@ export function createSoundEngine() {
       // Drone (note set by progression player via onChordChange)
       drone.rootSynth.volume.value = droneVolume ?? -30;
       drone.fifthSynth.volume.value = (droneVolume ?? -30) - 4;
+      drone.setFilterCutoff(droneCutoff ?? 200);
 
       // Melody
       if (melodyMood) melody.setMood(melodyMood);
       melody.synth.volume.value = melodyVolume ?? -20;
+
+      // Timbre profile — oscillator type + envelope character across voices
+      if (params.timbreProfile) {
+        pad.setTimbreProfile(params.timbreProfile);
+        arpeggio.setTimbreProfile(params.timbreProfile);
+        melody.setTimbreProfile(params.timbreProfile);
+      }
 
       // Effects
       reverb.decay = reverbDecay ?? 4;
@@ -363,6 +374,13 @@ export function createSoundEngine() {
 
         // Rhythm
         case 'rhythmDensity': percussion.setDensity(value); break;
+
+        // Texture atmosphere sweep
+        case 'textureAutoFilterRate':  texture.setAutoFilter(value, null, duration); break;
+        case 'textureAutoFilterDepth': texture.setAutoFilter(null, value, duration); break;
+
+        // Drone filter
+        case 'droneCutoff': drone.setFilterCutoff(value, duration); break;
 
         // Master velocity (time-of-day volume)
         case 'globalVelocityScale':
@@ -431,6 +449,12 @@ export function createSoundEngine() {
         case 'padSpread': pad.setSpread(value); break;
 
         case 'melodyMood': melody.setMood(value); break;
+
+        case 'timbreProfile':
+          pad.setTimbreProfile(value);
+          arpeggio.setTimbreProfile(value);
+          melody.setTimbreProfile(value);
+          break;
 
         default: break;
       }

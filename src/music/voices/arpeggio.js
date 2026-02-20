@@ -193,6 +193,29 @@ export function createArpeggioVoice() {
       filter.frequency.linearRampTo(freq, rampTime);
     },
 
+    /**
+     * Apply a weather timbre profile — changes oscillator type and envelope character.
+     * Takes effect on the next note trigger.
+     *
+     *   warm   — Fatsine with long release: melodic, bloomy
+     *   cool   — Triangle: clean and balanced (the familiar default)
+     *   cold   — Pure sine: sparse, crystalline, short decay
+     *   stormy — Fatsawtooth: sharp, raw, agitated
+     */
+    setTimbreProfile(profile) {
+      const profiles = {
+        warm:   { type: 'fatsine',     count: 2, attack: 0.06, release: 1.8 },
+        cool:   { type: 'triangle',    count: 1, attack: 0.04, release: 1.2 },
+        cold:   { type: 'sine',        count: 1, attack: 0.02, release: 0.8 },
+        stormy: { type: 'fatsawtooth', count: 2, attack: 0.01, release: 0.6 },
+      };
+      const p = profiles[profile] || profiles.cool;
+      synth.set({
+        oscillator: { type: p.type, count: p.count },
+        envelope:   { attack: p.attack, release: p.release },
+      });
+    },
+
     dispose() {
       this.stop();
       if (sequence) sequence.dispose();
