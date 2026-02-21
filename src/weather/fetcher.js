@@ -47,8 +47,22 @@ export async function fetchWeather(latitude, longitude) {
     const current = data.current;
     const daily = data.daily;
 
-    // Extract current hour's UV index from hourly data
-    const currentHour = new Date().getHours();
+    // Open-Meteo returns times as naive local strings (no timezone suffix) when
+    // timezone: 'auto' is used. JavaScript's Date constructor parses these as
+    // the *browser's* local timezone, which is wrong for remote locations.
+    // Use utc_offset_seconds to convert the location's local time to UTC epoch.
+    const utcOffsetMs = (data.utc_offset_seconds ?? 0) * 1000;
+
+    function localStringToDate(str) {
+      // Parse "YYYY-MM-DDTHH:MM" as UTC by appending Z, then subtract the
+      // location's UTC offset to get the correct UTC epoch for that local time.
+      return new Date(new Date(str + 'Z').getTime() - utcOffsetMs);
+    }
+
+    // Extract current hour's UV index from hourly data using the location's
+    // local time (not the browser's local hour).
+    const locationNowMs = Date.now() + utcOffsetMs;
+    const currentHour = new Date(locationNowMs).getUTCHours();
     const uvIndex = data.hourly?.uv_index?.[currentHour] ?? 0;
 
     return {
@@ -60,8 +74,8 @@ export async function fetchWeather(latitude, longitude) {
       windDirection: current.wind_direction_10m,
       weatherCode: current.weather_code,
       cloudCover: current.cloud_cover ?? 0,
-      sunrise: new Date(daily.sunrise[0]),
-      sunset: new Date(daily.sunset[0]),
+      sunrise: localStringToDate(daily.sunrise[0]),
+      sunset: localStringToDate(daily.sunset[0]),
       uvIndex,
     };
   } catch (err) {
