@@ -53,9 +53,11 @@ export function createAirQualityFetcher(latitude, longitude) {
   let lastData = null;
   let lat = latitude;
   let lng = longitude;
+  let generation = 0;
 
-  async function poll() {
+  async function poll(gen = generation) {
     const data = await fetchAirQuality(lat, lng);
+    if (gen !== generation) return;
     if (data) {
       lastData = data;
       if (callback) callback(data);
@@ -68,12 +70,22 @@ export function createAirQualityFetcher(latitude, longitude) {
     },
 
     async start() {
-      await poll();
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      generation++;
+      const gen = generation;
+      await poll(gen);
+      if (gen !== generation) return;
       // AQI doesn't change fast — poll every 15 minutes
-      timer = setInterval(poll, 15 * 60 * 1000);
+      timer = setInterval(() => {
+        poll(gen);
+      }, 15 * 60 * 1000);
     },
 
     stop() {
+      generation++;
       if (timer) {
         clearInterval(timer);
         timer = null;
@@ -83,6 +95,7 @@ export function createAirQualityFetcher(latitude, longitude) {
     setLocation(latitude, longitude) {
       lat = latitude;
       lng = longitude;
+      poll(generation);
     },
 
     get lastData() {

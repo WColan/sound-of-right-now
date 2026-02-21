@@ -34,7 +34,15 @@ export function mapWeatherToMusic(weather, options = {}) {
   // Harmonic mode/root use apparent temperature (feels-like) — wind chill and heat index
   // reflect the body's actual experience, which is what the music should match.
   // BPM stays tied to the physical thermometer: physical pace, not perceived comfort.
-  const { rootNote, scaleType } = mapTemperature(weather.apparentTemperature ?? weather.temperature);
+  let { rootNote, scaleType } = mapTemperature(weather.apparentTemperature ?? weather.temperature);
+
+  // Contextual minor-mode override: cold snow and stormy aeolian benefit from
+  // the raised 7th in harmonic minor (leading tone tension) or the brighter 6th
+  // in melodic minor (ascending drive). Only triggers in specific conditions.
+  if ((category === 'snow' && (weather.apparentTemperature ?? weather.temperature) < 0) ||
+      (category === 'storm' && scaleType === 'aeolian')) {
+    scaleType = Math.random() < 0.5 ? 'harmonicMinor' : 'melodicMinor';
+  }
   const bpm = clamp(55 + weather.temperature * 0.8, 50, 110);
 
   // Humidity → reverb + pad brightness
@@ -66,6 +74,8 @@ export function mapWeatherToMusic(weather, options = {}) {
   const noteInterval = selectFromRange(['1m', '2n', '4n', '8n', '16n'], windNorm);
   const rhythmDensity = lerp(0.05, 0.6, windNorm);
   const arpeggioVolume = lerp(-26, -14, windNorm);
+  // Wind chime activates above 8 km/h; volume rises with wind speed
+  const windChimeVolume = weather.windSpeed > 8 ? lerp(-30, -12, windNorm) : -80;
   // Windier conditions create faster, more dramatic atmospheric texture sweeps.
   // Calm (windNorm=0): 0.05 Hz slow drift, 0.3 depth (gentle)
   // Gusty (windNorm=1): 0.4 Hz fast churn, 0.9 depth (dramatic)
@@ -108,7 +118,6 @@ export function mapWeatherToMusic(weather, options = {}) {
   const padSpread = clamp(basePadSpread + windPadBoost, 8, 38);
   const textureVolume = palette.textureVolume;
   const noiseType = palette.noiseType;
-  const arpeggioOctave = palette.arpeggioOctave || 4;
   const percussionVolume = palette.percussionVolume || -24;
 
   // ── Sunrise/sunset transition shimmer + filter warmth ──
@@ -242,7 +251,6 @@ export function mapWeatherToMusic(weather, options = {}) {
     bassCutoff,
     noteInterval,
     arpeggioPattern,
-    arpeggioOctave,
     arpeggioFilterCutoff,
     reverbDecay,
     reverbWet,
@@ -273,6 +281,8 @@ export function mapWeatherToMusic(weather, options = {}) {
     // Stereo width
     arpeggioWidth,
     melodyWidth,
+    // Wind chime
+    windChimeVolume,
     timbreProfile,
     // Progression-driving params
     weatherCategory: category,
@@ -368,7 +378,6 @@ const WEATHER_PALETTES = {
     textureVolume: -40,
     noiseType: null,
     padVolume: -14,
-    arpeggioOctave: 4,
     percussionVolume: -26,
     melodyVolumeOffset: 0,
   },
@@ -377,7 +386,6 @@ const WEATHER_PALETTES = {
     textureVolume: -32,
     noiseType: null,
     padVolume: -13,
-    arpeggioOctave: 4,
     percussionVolume: -24,
     melodyVolumeOffset: -2,
   },
@@ -387,7 +395,6 @@ const WEATHER_PALETTES = {
     noiseType: 'pink',
     textureFilterCutoff: 600,
     padVolume: -12,
-    arpeggioOctave: 4,
     percussionVolume: -28,
     melodyVolumeOffset: -6,
   },
@@ -396,7 +403,6 @@ const WEATHER_PALETTES = {
     textureVolume: -24,
     noiseType: 'pink',
     padVolume: -13,
-    arpeggioOctave: 5,
     percussionVolume: -24,
     melodyVolumeOffset: -2,
   },
@@ -405,7 +411,6 @@ const WEATHER_PALETTES = {
     textureVolume: -16,
     noiseType: 'pink',
     padVolume: -13,
-    arpeggioOctave: 5,
     percussionVolume: -22,
     melodyVolumeOffset: -3,
   },
@@ -415,7 +420,6 @@ const WEATHER_PALETTES = {
     noiseType: 'white',
     textureFilterCutoff: 800,
     padVolume: -12,
-    arpeggioOctave: 5,
     percussionVolume: -28,
     melodyVolumeOffset: -4,
   },
@@ -424,7 +428,6 @@ const WEATHER_PALETTES = {
     textureVolume: -10,
     noiseType: 'brown',
     padVolume: -11,
-    arpeggioOctave: 3,
     percussionVolume: -16,
     melodyVolumeOffset: -2,
   },

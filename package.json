@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.6.1",
     "tone": "^15.1.22"
   },
   "devDependencies": {

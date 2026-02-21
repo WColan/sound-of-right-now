@@ -47,12 +47,37 @@ export function createBassVoice() {
   synth.connect(filter);
 
   let currentNote = null;
+  let walkingSequence = null;
 
   return {
     synth,
     filter,
     lfo,
     output: filter,
+
+    enableWalking(chordTones, scaleTones) {
+      this.disableWalking();
+      if (!chordTones || chordTones.length === 0) return;
+      const root = chordTones[0];
+      const fifth = chordTones[2] ?? chordTones[1];
+      const passing = scaleTones[Math.floor(scaleTones.length * 0.4)] ?? chordTones[1];
+      const approach = scaleTones[1] ?? chordTones[0];
+      const pattern = [root, fifth, passing, approach];
+      walkingSequence = new Tone.Sequence((time, note) => {
+        if (note) synth.triggerAttackRelease(note, '8n', time, 0.7);
+      }, pattern, '4n');
+      walkingSequence.start(0);
+      synth.set({ portamento: 0.05 });
+    },
+
+    disableWalking() {
+      if (walkingSequence) {
+        walkingSequence.stop();
+        walkingSequence.dispose();
+        walkingSequence = null;
+      }
+      synth.set({ portamento: 2 });
+    },
 
     playNote(note) {
       // Stop first if already playing to avoid "start time must be strictly
@@ -100,6 +125,7 @@ export function createBassVoice() {
     },
 
     dispose() {
+      this.disableWalking();
       this.stop();
       synth.dispose();
       filter.dispose();

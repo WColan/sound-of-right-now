@@ -123,9 +123,11 @@ export async function createTideFetcher(latitude, longitude) {
   let callback = null;
   let timer = null;
   let lastData = null;
+  let generation = 0;
 
-  async function poll() {
+  async function poll(gen = generation) {
     const data = await fetchTideLevel(station.id);
+    if (gen !== generation) return;
     if (data) {
       lastData = data;
       if (callback) callback(data);
@@ -141,12 +143,22 @@ export async function createTideFetcher(latitude, longitude) {
     },
 
     async start() {
-      await poll();
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      generation++;
+      const gen = generation;
+      await poll(gen);
+      if (gen !== generation) return;
       // Tide data updates every 6 minutes from NOAA; poll every 10 minutes
-      timer = setInterval(poll, 10 * 60 * 1000);
+      timer = setInterval(() => {
+        poll(gen);
+      }, 10 * 60 * 1000);
     },
 
     stop() {
+      generation++;
       if (timer) {
         clearInterval(timer);
         timer = null;

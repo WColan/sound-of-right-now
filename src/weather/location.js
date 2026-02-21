@@ -1,4 +1,27 @@
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
+const US_COUNTRY_NAMES = new Set([
+  'United States',
+  'United States of America',
+  'USA',
+  'US',
+]);
+
+function normalizeCountryName(value) {
+  return String(value || '').replace(/\s*\((?:the)\)\s*$/i, '').trim();
+}
+
+function isUnitedStatesName(value) {
+  return US_COUNTRY_NAMES.has(normalizeCountryName(value));
+}
+
+function getUSStateLabel(data) {
+  const code = String(data?.principalSubdivisionCode || '');
+  const suffix = code.split('-').pop();
+  if (suffix && /^[A-Za-z]{2}$/.test(suffix)) {
+    return suffix.toUpperCase();
+  }
+  return String(data?.principalSubdivision || '').trim();
+}
 
 /**
  * Get the user's current location via browser geolocation.
@@ -58,20 +81,34 @@ export async function searchCities(query) {
 
 /**
  * Reverse geocode coordinates to a place name.
- * Uses Open-Meteo geocoding with a nearby search.
+ * Uses BigDataCloud's free reverse geocoding API (no key required).
  */
 export async function reverseGeocode(latitude, longitude) {
-  // Open-Meteo doesn't have a true reverse geocoding endpoint,
-  // so we use a simple approach: search with coordinates rounded to get nearby city
   try {
-    const url = `${GEOCODING_URL}?name=${latitude.toFixed(1)},${longitude.toFixed(1)}&count=1&language=en&format=json`;
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
     const response = await fetch(url);
     const data = await response.json();
 
-    if (data.results && data.results.length > 0) {
-      const r = data.results[0];
-      return `${r.name}, ${r.admin1 || r.country}`;
+    const city = data.city || data.locality || data.principalSubdivision;
+    const country = normalizeCountryName(data.countryName);
+    const countryCode = String(data.countryCode || '').toUpperCase();
+    const admin1 = countryCode === 'US' ? getUSStateLabel(data) : '';
+
+    if (city) {
+      return formatLocation({
+        name: city,
+        admin1,
+        country,
+      });
     }
+    if (data.principalSubdivision) {
+      return formatLocation({
+        name: data.principalSubdivision,
+        admin1: '',
+        country,
+      });
+    }
+    if (country) return country;
   } catch (err) {
     // Fallback: just show coordinates
   }
@@ -83,8 +120,13 @@ export async function reverseGeocode(latitude, longitude) {
  * Format a location result for display.
  */
 export function formatLocation(result) {
-  const parts = [result.name];
-  if (result.admin1) parts.push(result.admin1);
-  if (result.country && result.country !== 'United States') parts.push(result.country);
+  const name = String(result?.name || '').trim();
+  const admin1 = String(result?.admin1 || '').trim();
+  const country = normalizeCountryName(result?.country || '');
+
+  const parts = [];
+  if (name) parts.push(name);
+  if (admin1) parts.push(admin1);
+  if (country && !isUnitedStatesName(country)) parts.push(country);
   return parts.join(', ');
 }

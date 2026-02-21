@@ -1,0 +1,92 @@
+import * as Tone from 'tone';
+
+/**
+ * Wind chime voice — sparse, stochastic metallic tones that activate with wind.
+ *
+ * Uses a PolySynth with a sine oscillator and percussive envelope (fast attack,
+ * long decay, zero sustain) to simulate the brief metallic ring of chime tubes.
+ *
+ * Scheduling is recursive via Transport.scheduleOnce: each note schedules the
+ * next, with an interval inversely proportional to wind speed. This keeps the
+ * chimes transport-synchronized (no clock drift) while remaining irregular.
+ *
+ * Notes are selected randomly from the upper register of the current scale
+ * (octave 5 and 6), which keeps chimes above the harmonic density of pads
+ * and arpeggios.
+ */
+export function createWindChimeVoice() {
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.005, decay: 1.2, sustain: 0, release: 0.5 },
+    volume: -18,
+  });
+
+  let scheduledId = null;
+  let currentNotes = [];
+  let currentWindSpeed = 0;
+  let isActive = false;
+
+  /**
+   * Interval between strikes in seconds — longer when calm, shorter when gusty.
+   * Randomized ±50% around the base to feel natural.
+   */
+  function getInterval() {
+    const base = Math.max(1, 20 - currentWindSpeed * 0.6);
+    return base * (0.5 + Math.random());
+  }
+
+  function scheduleNext() {
+    if (!isActive || currentNotes.length === 0) return;
+    scheduledId = Tone.Transport.scheduleOnce(time => {
+      if (!isActive) return;
+      const note = currentNotes[Math.floor(Math.random() * currentNotes.length)];
+      synth.triggerAttackRelease(note, '2n', time);
+      scheduleNext();
+    }, `+${getInterval()}`);
+  }
+
+  return {
+    /** The Tone.js node to connect to the signal chain. */
+    output: synth,
+
+    /**
+     * Update the available note pool. Filters to upper register (octave 5+)
+     * to keep chimes above the harmonic bed.
+     * @param {string[]} scaleTones - All scale tones from the current chord/scale
+     */
+    setNotes(scaleTones) {
+      currentNotes = scaleTones.filter(n => /[56]$/.test(n));
+    },
+
+    /**
+     * Update wind speed — controls strike frequency.
+     * @param {number} kmh - Wind speed in km/h
+     */
+    setWindSpeed(kmh) {
+      currentWindSpeed = kmh;
+    },
+
+    /**
+     * Activate or deactivate the chime. Activation starts the scheduling chain;
+     * deactivation clears the pending scheduled event so no ghost notes fire.
+     * @param {boolean} active
+     */
+    setActive(active) {
+      if (active === isActive) return;
+      isActive = active;
+      if (active) {
+        scheduleNext();
+      } else {
+        if (scheduledId !== null) {
+          Tone.Transport.clear(scheduledId);
+          scheduledId = null;
+        }
+      }
+    },
+
+    dispose() {
+      this.setActive(false);
+      synth.dispose();
+    },
+  };
+}

@@ -100,6 +100,18 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   // Current progression qualities (for dot coloring)
   let currentAllQualities = [];
 
+  // Firefly particles
+  let fireflies = [];
+  const MAX_FIREFLIES = 35;
+
+  // Snow accumulation (grows during snowfall, melts slowly otherwise)
+  let snowAccumulation = 0;
+
+  // Heat shimmer offscreen canvas
+  let offscreenCanvas = null;
+  let offscreenCtx = null;
+  let shimmerPhase = 0;
+
   // Chord display state
   let currentChordText = '';
   let chordFadeTimer = null;
@@ -111,6 +123,15 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     height = window.innerHeight;
     canvas.width = width;
     canvas.height = height;
+
+    // Resize offscreen canvas for heat shimmer
+    if (!offscreenCanvas) {
+      offscreenCanvas = document.createElement('canvas');
+      offscreenCtx = offscreenCanvas.getContext('2d');
+    }
+    offscreenCanvas.width = width;
+    offscreenCanvas.height = Math.ceil(height * 0.45);
+
     generateLandscape();
     generateStars();
     generateClouds();
@@ -586,6 +607,129 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     }
   }
 
+  // ── Firefly Particles ──
+
+  function updateFireflies(active) {
+    if (!active) { fireflies = []; return; }
+    while (fireflies.length < MAX_FIREFLIES) {
+      fireflies.push({
+        x: Math.random() * width,
+        y: height * 0.45 + Math.random() * height * 0.45,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.004 + Math.random() * 0.006,
+        drift: (Math.random() - 0.5) * 0.4,
+        size: 1.5 + Math.random() * 2,
+      });
+    }
+  }
+
+  function drawFireflies() {
+    if (fireflies.length === 0) return;
+    const isWarm = (state.temperature ?? 0) > 15;
+    const isNight = state.brightness < 0.25;
+    const isClear = state.weatherCategory === 'clear' || state.weatherCategory === 'cloudy';
+    if (!isWarm || !isNight || !isClear) return;
+
+    for (const f of fireflies) {
+      f.phase += f.speed;
+      f.x += f.drift;
+      if (f.x < 0) f.x = width;
+      if (f.x > width) f.x = 0;
+
+      const glow = Math.pow(Math.max(0, Math.sin(f.phase)), 3);
+      if (glow < 0.01) continue;
+
+      const radius = f.size * 4;
+      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, radius);
+      grad.addColorStop(0, `rgba(200, 255, 130, ${glow * 0.9})`);
+      grad.addColorStop(0.3, `rgba(160, 240, 80, ${glow * 0.4})`);
+      grad.addColorStop(1, 'rgba(160, 240, 80, 0)');
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  // ── Snow Accumulation ──
+
+  /**
+   * Draws a snow pile that grows upward from the landscape during snowfall.
+   * The pile follows the terrain with per-column bumps, filled with a white
+   * gradient whose opacity scales with the accumulation level.
+   */
+  function drawSnowAccumulation() {
+    // Update accumulation level
+    if (state.weatherCategory === 'snow') {
+      snowAccumulation = Math.min(1, snowAccumulation + 0.00003);
+    } else {
+      snowAccumulation = Math.max(0, snowAccumulation - 0.00001);
+    }
+    if (snowAccumulation < 0.01 || landscape.length < 2) return;
+
+    const pileMaxHeight = height * 0.04 * snowAccumulation;
+
+    ctx.beginPath();
+    // Start at the first landscape point
+    ctx.moveTo(landscape[0].x, landscape[0].y);
+
+    // Draw the top edge of the snow pile (slightly lumpy, following terrain)
+    for (let i = 0; i < landscape.length; i++) {
+      const pt = landscape[i];
+      const bump = Math.sin(pt.x * 0.02 + 1.5) * pileMaxHeight * 0.35;
+      ctx.lineTo(pt.x, pt.y - pileMaxHeight + bump);
+    }
+
+    // Walk back along the landscape for the bottom edge of the pile
+    for (let i = landscape.length - 1; i >= 0; i--) {
+      ctx.lineTo(landscape[i].x, landscape[i].y);
+    }
+    ctx.closePath();
+
+    const snowGradient = ctx.createLinearGradient(0, 0, 0, height);
+    snowGradient.addColorStop(0, `rgba(240, 245, 255, 0)`);
+    snowGradient.addColorStop(0.6, `rgba(240, 245, 255, ${snowAccumulation * 0.75})`);
+    snowGradient.addColorStop(1, `rgba(255, 255, 255, ${snowAccumulation * 0.9})`);
+    ctx.fillStyle = snowGradient;
+    ctx.fill();
+  }
+
+  // ── Heat Shimmer ──
+
+  /**
+   * Applies a sinusoidal horizontal displacement to the bottom 45% of the frame,
+   * simulating the rising heat distortion visible above hot surfaces.
+   * Active when temperature > 30°C in clear or cloudy conditions.
+   */
+  function applyHeatShimmer() {
+    const isHot = (state.temperature ?? 0) > 30;
+    const isClear = state.weatherCategory === 'clear' || state.weatherCategory === 'cloudy';
+    if (!isHot || !isClear || !offscreenCanvas) return;
+
+    const intensity = clamp(((state.temperature ?? 30) - 30) / 10, 0, 1);
+    if (intensity < 0.01) return;
+
+    const stripH = Math.ceil(height * 0.45);
+    const srcY = height - stripH;
+
+    // Capture the rendered bottom region to the offscreen canvas
+    offscreenCtx.clearRect(0, 0, width, stripH);
+    offscreenCtx.drawImage(canvas, 0, srcY, width, stripH, 0, 0, width, stripH);
+
+    // Redraw back with per-strip sinusoidal displacement
+    const stripSize = 4;
+    for (let y = 0; y < stripH; y += stripSize) {
+      const displacement = Math.sin(shimmerPhase + y * 0.4) * intensity * 3;
+      ctx.drawImage(
+        offscreenCanvas,
+        0, y, width, Math.min(stripSize, stripH - y),
+        displacement, srcY + y, width, Math.min(stripSize, stripH - y)
+      );
+    }
+
+    shimmerPhase += 0.02;
+  }
+
   // ── Lightning Flash ──
 
   function scheduleLightning() {
@@ -662,7 +806,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   }
 
   function drawWaterWave(fftData) {
-    const baseY = height * 0.88;
+    const baseY = getWaterlineY();
     const waveAmplitude = 4 + (state.tideLevel != null ? state.tideLevel * 0.8 : 2);
 
     // Use low-frequency FFT bins for wave motion
@@ -699,6 +843,10 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     ctx.strokeStyle = `rgba(150, 180, 220, ${0.1 + bassEnergy * 0.2})`;
     ctx.lineWidth = 1;
     ctx.stroke();
+  }
+
+  function getWaterlineY() {
+    return height * 0.88;
   }
 
   function drawParticles(fftData) {
@@ -817,11 +965,15 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     drawClouds();
     drawWeatherParticles();
     drawSplashes();
+    drawFireflies();
     drawParticles(fftData);
     drawLandscape(waveformData);
+    drawSnowAccumulation();
     drawWaterWave(fftData);
     // Lightning overlay — on top of everything (storm only)
     drawLightning();
+    // Heat shimmer — applied last, displaces the already-rendered frame
+    applyHeatShimmer();
 
     time += 0.016;
     animFrame = requestAnimationFrame(draw);
@@ -889,6 +1041,14 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         } else if (newState.weatherCategory !== 'storm' && prevCategory === 'storm') {
           stopLightning();
         }
+      }
+
+      // Update firefly population when conditions change
+      if (newState.weatherCategory !== undefined || newState.brightness !== undefined || newState.temperature !== undefined) {
+        const isWarm = (state.temperature ?? 0) > 15;
+        const isNight = state.brightness < 0.25;
+        const isClear = state.weatherCategory === 'clear' || state.weatherCategory === 'cloudy';
+        updateFireflies(isWarm && isNight && isClear);
       }
     },
 
