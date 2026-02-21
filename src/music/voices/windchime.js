@@ -12,7 +12,8 @@ import * as Tone from 'tone';
  *
  * Notes are selected randomly from the upper register of the current scale
  * (octave 5 and 6), which keeps chimes above the harmonic density of pads
- * and arpeggios.
+ * and arpeggios. Chord tones are preferred at ~65% probability for harmonic
+ * consonance — passing tones add color without clashing.
  */
 export function createWindChimeVoice() {
   const synth = new Tone.PolySynth(Tone.Synth, {
@@ -22,7 +23,8 @@ export function createWindChimeVoice() {
   });
 
   let scheduledId = null;
-  let currentNotes = [];
+  let currentNotes = [];       // All upper-register scale tones (octave 5–6)
+  let currentChordNotes = [];  // Subset that are chord tones (preferred)
   let currentWindSpeed = 0;
   let isActive = false;
 
@@ -35,12 +37,26 @@ export function createWindChimeVoice() {
     return base * (0.5 + Math.random());
   }
 
+  /**
+   * Pick a note with chord-tone preference. 65% of the time we pull from the
+   * chord-tone subset (if available); otherwise from the full scale pool.
+   * This mirrors the arpeggio's C/S weighting for harmonic coherence.
+   */
+  function pickNote() {
+    const preferChord = Math.random() < 0.65;
+    const pool = (preferChord && currentChordNotes.length > 0)
+      ? currentChordNotes
+      : currentNotes;
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
   function scheduleNext() {
     if (!isActive || currentNotes.length === 0) return;
     scheduledId = Tone.Transport.scheduleOnce(time => {
       if (!isActive) return;
-      const note = currentNotes[Math.floor(Math.random() * currentNotes.length)];
-      synth.triggerAttackRelease(note, '2n', time);
+      const note = pickNote();
+      if (note) synth.triggerAttackRelease(note, '2n', time);
       scheduleNext();
     }, `+${getInterval()}`);
   }
@@ -50,12 +66,14 @@ export function createWindChimeVoice() {
     output: synth,
 
     /**
-     * Update the available note pool. Filters to upper register (octave 5+)
-     * to keep chimes above the harmonic bed.
-     * @param {string[]} scaleTones - All scale tones from the current chord/scale
+     * Update the available note pool. Filters both lists to octaves 5–6 to
+     * keep chimes above the harmonic bed.
+     * @param {string[]} scaleTones  - All scale tones from current chord/scale
+     * @param {string[]} [chordTones] - Chord tones for weighted selection (optional)
      */
-    setNotes(scaleTones) {
+    setNotes(scaleTones, chordTones = []) {
       currentNotes = scaleTones.filter(n => /[56]$/.test(n));
+      currentChordNotes = chordTones.filter(n => /[56]$/.test(n));
     },
 
     /**

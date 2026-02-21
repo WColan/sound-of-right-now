@@ -433,14 +433,10 @@ export function createProgressionPlayer(callbacks) {
           // Swap in queued progression (weather/key change)
           currentProgression = nextProgression;
           nextProgression = null;
-          chordLoop.interval = currentProgression.harmonicRhythm;
         } else if (callbacks.onCycleEnd) {
           // Generate a fresh progression to keep evolving
           const fresh = callbacks.onCycleEnd();
-          if (fresh) {
-            currentProgression = fresh;
-            chordLoop.interval = currentProgression.harmonicRhythm;
-          }
+          if (fresh) currentProgression = fresh;
         }
         // If neither callback nor queue, re-loop current progression
         chordIndex = 0;
@@ -448,6 +444,14 @@ export function createProgressionPlayer(callbacks) {
 
       const chord = currentProgression.chords[chordIndex];
       callbacks.onChordChange(chord, chordIndex, currentProgression.chords.length);
+
+      // Secondary dominant chords last half the normal harmonic rhythm — they
+      // are a brief chromatic intensification, not a full harmonic station.
+      // We set the interval AFTER firing so it governs the *next* wake-up.
+      const baseRhythm = currentProgression.harmonicRhythm;
+      chordLoop.interval = chord.isSecondaryDominant
+        ? baseRhythm.replace(/(\d+)m/, (_, n) => `${Math.max(1, Math.round(parseInt(n) / 2))}m`)
+        : baseRhythm;
     }, currentProgression.harmonicRhythm);
 
     // Start after the first interval (first chord was already fired)

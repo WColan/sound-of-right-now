@@ -71,7 +71,6 @@ export function mapWeatherToMusic(weather, options = {}) {
 
   // Wind speed → rhythmic density + texture sweep
   const windNorm = clamp(weather.windSpeed / 50, 0, 1);
-  const noteInterval = selectFromRange(['1m', '2n', '4n', '8n', '16n'], windNorm);
   const rhythmDensity = lerp(0.05, 0.6, windNorm);
   const arpeggioVolume = lerp(-26, -14, windNorm);
   // Wind chime activates above 8 km/h; volume rises with wind speed
@@ -188,14 +187,17 @@ export function mapWeatherToMusic(weather, options = {}) {
 
   // ── Sub-bass gain (parallel bus physical impact) ──
   // Low pressure systems carry more sub energy; stormy conditions maximize rumble.
-  // Range 0.1–0.55 is conservative — sub buses can easily overwhelm a mix.
+  // Storm ceiling raised to 0.7 for genuine sub rumble; other categories stay ≤0.55
+  // to avoid overwhelming the mix. The sub bus has a Chebyshev saturator so the
+  // extra gain creates harmonic content on speakers that can not reproduce sub-bass.
   const subBassGain = (() => {
     const base = lerp(0.2, 0.45, 1 - pressNorm); // Low pressure → more sub
     const categoryBoost = {
-      storm: 0.2, rain: 0.1, drizzle: 0.05, fog: 0.05,
+      storm: 0.25, rain: 0.1, drizzle: 0.05, fog: 0.05,
       cloudy: 0, clear: -0.05, snow: 0.05,
     };
-    return clamp(base + (categoryBoost[category] ?? 0), 0.1, 0.55);
+    const ceiling = category === 'storm' ? 0.7 : 0.55;
+    return clamp(base + (categoryBoost[category] ?? 0), 0.1, ceiling);
   })();
 
   // ── Percussion reverb wet — category-driven short reverb tail ──
@@ -233,7 +235,11 @@ export function mapWeatherToMusic(weather, options = {}) {
 
   // ── Binaural panning ──
   const arpeggioPan = -percussionPan * 0.4;
-  const melodyPan = Math.sin(now.getTime() / 60000) * 0.3;
+  // Melody slowly orbits left/right over ~1 minute. Moon fullness widens the
+  // arc: a full moon extends the range to ±0.45, a new moon narrows to ±0.2.
+  // This couples the moon modulation (already driving LFO/chorus) to spatial position.
+  const melodyPanRange = lerp(0.2, 0.45, moonFullness);
+  const melodyPan = Math.sin(now.getTime() / 60000) * melodyPanRange;
 
   return {
     rootNote,
@@ -249,7 +255,6 @@ export function mapWeatherToMusic(weather, options = {}) {
     padBrightness: finalPadBrightness,
     padSpread,
     bassCutoff,
-    noteInterval,
     arpeggioPattern,
     arpeggioFilterCutoff,
     reverbDecay,

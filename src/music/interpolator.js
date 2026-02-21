@@ -81,7 +81,6 @@ const DISCRETE_PARAMS = new Set([
   'arpeggioPattern',
   'noiseType',
   'padSpread',
-  'noteInterval',
   'timbreProfile',      // Oscillator type + envelope character — snaps at next note
   // Progression-driving discrete params
   'weatherCategory',
@@ -137,7 +136,8 @@ export function createInterpolator(engine) {
           // Continuous change — ramp smoothly
           engine.rampParam(key, value, RAMP_DURATIONS[key]);
         } else {
-          // Unknown param — try ramping with default duration
+          // Unknown param — warn in dev so gaps surface quickly, then attempt ramp
+          console.warn(`[interpolator] unknown param "${key}" — add it to RAMP_DURATIONS or DISCRETE_PARAMS`);
           engine.rampParam(key, value, 10);
         }
       }

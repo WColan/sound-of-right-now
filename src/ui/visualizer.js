@@ -90,6 +90,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   // Lightning state
   let lightningAlpha = 0;
   let lightningTimer = null;
+  let lightningCallback = null; // Registered via onLightning(fn)
 
   // Clouds
   let clouds = [];
@@ -737,6 +738,8 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     const delay = 8000 + Math.random() * 27000; // 8–35 seconds between flashes
     lightningTimer = setTimeout(() => {
       if (state.weatherCategory !== 'storm') return;
+      // Notify audio engine so it can trigger a thunder transient in sync
+      if (lightningCallback) lightningCallback();
       // Trigger double flash: initial bright, short gap, secondary weaker flash
       lightningAlpha = 0.85;
       setTimeout(() => {
@@ -1050,6 +1053,15 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         const isClear = state.weatherCategory === 'clear' || state.weatherCategory === 'cloudy';
         updateFireflies(isWarm && isNight && isClear);
       }
+    },
+
+    /**
+     * Register a callback to fire when a lightning flash triggers.
+     * Used to synchronise audio thunder with the visual flash.
+     * @param {Function} fn - Called with no arguments on each flash
+     */
+    onLightning(fn) {
+      lightningCallback = fn;
     },
 
     /**

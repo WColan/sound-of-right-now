@@ -228,9 +228,11 @@ export function createSoundEngine() {
   let currentWeatherCategory = 'clear';
   let currentPressureNorm = 0.5;
   let lastPadVoicing = null;
-  let lastBassNote = null;        // Needed for resume() re-attack
-  let lastDroneRootName = null;   // Needed for resume() re-attack
-  let windChimeWasActive = false; // Needed for resume() re-activation
+  let lastBassNote = null;         // Needed for resume() re-attack
+  let lastDroneRootName = null;    // Needed for resume() re-attack
+  let windChimeWasActive = false;  // Needed for resume() re-activation
+  let lastMelodyChordTones = null; // Needed for resume() melody context restore
+  let lastMelodyScaleTones = null;
 
   // Celestial context — updated from weather updates, used by melody for golden-hour boosts
   let currentSunTransition = 0;
@@ -257,6 +259,12 @@ export function createSoundEngine() {
       const arpCurrent = arpeggio.synth?.detune?.value ?? 0;
       const arpNext = Math.max(-12, Math.min(12, arpCurrent + arpStep));
       arpeggio.synth?.detune?.rampTo(arpNext, 2);
+
+      // Melody drifts very subtly — enough to feel slightly unstable, not out of tune
+      const melStep = (Math.random() - 0.5) * 2;
+      const melCurrent = melody.synth?.detune?.value ?? 0;
+      const melNext = Math.max(-8, Math.min(8, melCurrent + melStep));
+      melody.synth?.detune?.rampTo(melNext, 4);
     }, 3000);
   }
 
@@ -265,10 +273,13 @@ export function createSoundEngine() {
       clearInterval(microtonalInterval);
       microtonalInterval = null;
     }
-    // Return voices to concert pitch over 5 seconds
+    // Return all drifting voices to concert pitch.
+    // For pad: ramp both A and B — whichever is currently active or fading out,
+    // both need to reset so the idle synth is clean for the next crossfade.
     pad.synthA?.detune?.rampTo(0, 5);
     pad.synthB?.detune?.rampTo(0, 5);
     arpeggio.synth?.detune?.rampTo(0, 3);
+    melody.synth?.detune?.rampTo(0, 4);
   }
 
   function setSpatialPan(node, pan, duration = 0) {
@@ -331,10 +342,14 @@ export function createSoundEngine() {
         drone.changeNote(chord.chordRootName);
       }
 
-      // Update wind chime note pool from current scale tones
-      windChime.setNotes(chord.scaleTones);
+      // Update wind chime note pool — pass both scale tones and chord tones so
+      // the chime can prefer harmonically consonant strikes.
+      windChime.setNotes(chord.scaleTones, chord.chordTones);
 
-      // Update melody — set chord context and trigger potential phrase
+      // Update melody — set chord context and trigger potential phrase.
+      // Also cache tones so resume() can restore context after a pause.
+      lastMelodyChordTones = chord.chordTones;
+      lastMelodyScaleTones = chord.scaleTones;
       melody.setChordContext(chord.chordTones, chord.scaleTones);
       melody.onChordChange({
         isFirstChord: index === 0,
@@ -416,6 +431,15 @@ export function createSoundEngine() {
     /** Register callback for chord changes (used by visualizer) */
     onChordChange(fn) {
       externalChordChangeCallback = fn;
+    },
+
+    /**
+     * Fire a thunder transient — called by main.js when the visualizer's
+     * lightning flash fires. Delegates to the percussion voice so the
+     * membrane synth is already routed through the correct signal chain.
+     */
+    triggerThunder() {
+      percussion.triggerThunder();
     },
 
     /**
@@ -802,6 +826,12 @@ export function createSoundEngine() {
       }
       if (lastDroneRootName) {
         drone.playNote(lastDroneRootName);
+      }
+
+      // Restore melody chord context so it can fire a phrase on the next chord change.
+      // stop() cleared its scheduled phrase events; setChordContext primes it again.
+      if (lastMelodyChordTones && lastMelodyScaleTones) {
+        melody.setChordContext(lastMelodyChordTones, lastMelodyScaleTones);
       }
 
       // Restart looping voices and the Transport clock
