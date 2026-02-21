@@ -64,6 +64,9 @@ const RAMP_DURATIONS = {
   arpeggioWidth: 8,
   melodyWidth: 8,
 
+  // Wind chime volume (medium — wind changes gradually)
+  windChimeVolume: 5,
+
   // Pressure (slow — affects harmonic rhythm)
   pressureNorm: 30,
 
@@ -88,7 +91,7 @@ const DISCRETE_PARAMS = new Set([
 ]);
 
 // These are metadata, not engine params
-const META_PARAMS = new Set(['_meta', 'isRaining', 'rainIntensity', 'arpeggioOctave']);
+const META_PARAMS = new Set(['_meta', 'isRaining', 'rainIntensity']);
 
 /**
  * Create an interpolator instance.

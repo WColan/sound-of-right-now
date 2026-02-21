@@ -97,9 +97,11 @@ export function createWeatherFetcher(latitude, longitude, intervalMs = 60000) {
   let lastState = null;
   let lat = latitude;
   let lng = longitude;
+  let generation = 0;
 
-  async function poll() {
+  async function poll(gen = generation) {
     const state = await fetchWeather(lat, lng);
+    if (gen !== generation) return;
     if (state) {
       lastState = state;
       if (callback) callback(state);
@@ -114,12 +116,22 @@ export function createWeatherFetcher(latitude, longitude, intervalMs = 60000) {
 
     /** Start polling */
     async start() {
-      await poll(); // Fetch immediately
-      timer = setInterval(poll, intervalMs);
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      generation++;
+      const gen = generation;
+      await poll(gen); // Fetch immediately
+      if (gen !== generation) return;
+      timer = setInterval(() => {
+        poll(gen);
+      }, intervalMs);
     },
 
     /** Stop polling */
     stop() {
+      generation++;
       if (timer) {
         clearInterval(timer);
         timer = null;
@@ -130,7 +142,7 @@ export function createWeatherFetcher(latitude, longitude, intervalMs = 60000) {
     async setLocation(latitude, longitude) {
       lat = latitude;
       lng = longitude;
-      await poll();
+      await poll(generation);
     },
 
     /** Force an immediate fetch */

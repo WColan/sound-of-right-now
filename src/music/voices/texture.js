@@ -48,11 +48,17 @@ export function createTextureVoice() {
 
   let rainLoop = null;
   let isRaining = false;
+  let rainStopTimeout = null;
 
   function startRain(intensity = 0.5) {
-    if (isRaining) return;
-    isRaining = true;
-    rainNoise.start();
+    if (rainStopTimeout) {
+      clearTimeout(rainStopTimeout);
+      rainStopTimeout = null;
+    }
+    if (!isRaining) {
+      isRaining = true;
+      rainNoise.start();
+    }
     rainGain.gain.rampTo(intensity, 2);
 
     if (rainLoop) rainLoop.dispose();
@@ -69,7 +75,9 @@ export function createTextureVoice() {
     if (!isRaining) return;
     isRaining = false;
     rainGain.gain.rampTo(0, 3);
-    setTimeout(() => {
+    rainStopTimeout = setTimeout(() => {
+      rainStopTimeout = null;
+      if (isRaining) return;
       rainNoise.stop();
       if (rainLoop) {
         rainLoop.stop();
@@ -134,6 +142,7 @@ export function createTextureVoice() {
 
     dispose() {
       this.stop();
+      if (rainStopTimeout) clearTimeout(rainStopTimeout);
       noise.dispose();
       autoFilter.dispose();
       filter.dispose();

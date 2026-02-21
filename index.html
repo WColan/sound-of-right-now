@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sound of Right Now</title>
+  <title>Sound of Now</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/src/styles/main.css" />
 </head>
 <body>
@@ -11,8 +12,12 @@
 
   <div id="overlay" class="overlay">
     <div class="overlay-content">
-      <h1>Sound of Right Now</h1>
-      <p>Generative ambient music shaped by the weather where you are.</p>
+      <div class="brand-chip" aria-label="SONAR brand mark">SONAR</div>
+      <h1 class="overlay-title">
+        <span class="overlay-title-line">Sound of Now:</span>
+        <span class="overlay-title-line">Atmospheric Renderings</span>
+      </h1>
+      <p class="overlay-tagline">Generative ambient music for the here and now.</p>
       <button id="listen-btn" class="listen-btn">Listen</button>
     </div>
   </div>
@@ -27,16 +32,49 @@
     <div class="chord-timeline" id="chord-timeline"></div>
   </div>
 
+  <div id="mute-panel" class="mute-panel hidden">
+    <button class="mute-btn" data-voice="pad">pad</button>
+    <button class="mute-btn" data-voice="arpeggio">arp</button>
+    <button class="mute-btn" data-voice="bass">bass</button>
+    <button class="mute-btn" data-voice="melody">mel</button>
+    <button class="mute-btn" data-voice="texture">tex</button>
+    <button class="mute-btn" data-voice="percussion">perc</button>
+    <button class="mute-btn" data-voice="drone">drone</button>
+  </div>
+
   <div id="controls" class="controls hidden">
     <button id="pause-btn" class="control-btn" aria-label="pause">⏸</button>
     <input type="range" id="volume-slider" min="0" max="100" value="80"
       aria-label="Master volume" class="volume-slider" />
-    <button id="location-btn" class="control-btn">change location</button>
-    <button id="share-btn" class="control-btn" aria-label="Share link">🔗</button>
+    <button id="menu-btn" class="control-btn" aria-label="Open menu" aria-haspopup="menu" aria-expanded="false"><span class="menu-glyph" aria-hidden="true">⋯</span></button>
+  </div>
+
+  <div id="secondary-menu" class="secondary-menu hidden" role="menu" aria-label="Actions">
+    <button id="location-btn" class="control-btn menu-item" role="menuitem">change location</button>
+    <button id="mix-btn" class="control-btn menu-item" role="menuitem" aria-label="Mix">mix</button>
+    <button id="info-btn" class="control-btn menu-item" role="menuitem" aria-label="What am I hearing">?</button>
+    <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
+    <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">
+      <span class="share-label">share</span>
+      <span class="share-check" aria-hidden="true">✓</span>
+    </button>
+  </div>
+
+  <div id="hearing-panel" class="hearing-panel hidden">
+    <button class="hearing-close" aria-label="Close">×</button>
+    <div id="hearing-content"></div>
   </div>
 
   <div id="location-search" class="location-search hidden">
     <input type="text" id="city-input" placeholder="Search city..." autocomplete="off" />
+    <button id="current-location-btn" type="button" class="current-location-btn" aria-label="Use current location">
+      <span class="current-location-glyph" aria-hidden="true">⌖</span>
+      <span>current location</span>
+    </button>
+    <button id="random-location-btn" type="button" class="current-location-btn random-location-btn" aria-label="Use a random location">
+      <span class="random-location-glyph" aria-hidden="true">✦</span>
+      <span>random location</span>
+    </button>
     <div id="city-results" class="city-results"></div>
   </div>
 

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchWeather } from './fetcher.js';
+import { fetchWeather, createWeatherFetcher } from './fetcher.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -19,12 +19,12 @@ import { fetchWeather } from './fetcher.js';
  * @param {string} opts.sunsetLocal  - "YYYY-MM-DDTHH:MM" in location's local time
  * @param {string} opts.currentTime  - "YYYY-MM-DDTHH:MM" in location's local time
  */
-function makeApiResponse({ utcOffsetSeconds, sunriseLocal, sunsetLocal, currentTime }) {
+function makeApiResponse({ utcOffsetSeconds, sunriseLocal, sunsetLocal, currentTime, temperature = 28 }) {
   return {
     utc_offset_seconds: utcOffsetSeconds,
     current: {
       time: currentTime,
-      temperature_2m: 28,
+      temperature_2m: temperature,
       apparent_temperature: 30,
       relative_humidity_2m: 55,
       surface_pressure: 1010,
@@ -49,6 +49,16 @@ function mockFetch(responseBody) {
     ok: true,
     json: () => Promise.resolve(responseBody),
   });
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -183,5 +193,79 @@ describe('fetchWeather — timezone handling', () => {
 
     // Local hour in Delhi at 06:30 UTC = 12:00, so UV index should be 12
     expect(weather.uvIndex).toBe(12);
+  });
+});
+
+describe('createWeatherFetcher — lifecycle/race safety', () => {
+  it('ignores in-flight poll results after stop()', async () => {
+    const inFlight = deferred();
+    global.fetch = vi.fn().mockReturnValue(inFlight.promise);
+
+    const fetcher = createWeatherFetcher(40.7128, -74.006, 1000);
+    const onUpdate = vi.fn();
+    fetcher.onUpdate(onUpdate);
+
+    const startPromise = fetcher.start();
+    fetcher.stop();
+
+    inFlight.resolve({
+      ok: true,
+      json: () => Promise.resolve(makeApiResponse({
+        utcOffsetSeconds: 0,
+        sunriseLocal: '2024-01-20T07:00',
+        sunsetLocal: '2024-01-20T17:00',
+        currentTime: '2024-01-20T12:00',
+      })),
+    });
+
+    await startPromise;
+    expect(onUpdate).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(5000);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops stale setLocation response resolved after stop()', async () => {
+    const first = deferred();
+    const second = deferred();
+    global.fetch = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const fetcher = createWeatherFetcher(40.7128, -74.006, 1000);
+    const onUpdate = vi.fn();
+    fetcher.onUpdate(onUpdate);
+
+    const startPromise = fetcher.start();
+    first.resolve({
+      ok: true,
+      json: () => Promise.resolve(makeApiResponse({
+        utcOffsetSeconds: 0,
+        sunriseLocal: '2024-01-20T07:00',
+        sunsetLocal: '2024-01-20T17:00',
+        currentTime: '2024-01-20T12:00',
+        temperature: 10,
+      })),
+    });
+    await startPromise;
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+
+    const setLocationPromise = fetcher.setLocation(34.0522, -118.2437);
+    fetcher.stop();
+
+    second.resolve({
+      ok: true,
+      json: () => Promise.resolve(makeApiResponse({
+        utcOffsetSeconds: -28800,
+        sunriseLocal: '2024-01-20T07:00',
+        sunsetLocal: '2024-01-20T17:00',
+        currentTime: '2024-01-20T12:00',
+        temperature: 35,
+      })),
+    });
+    await setLocationPromise;
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(fetcher.lastState.temperature).toBe(10);
   });
 });

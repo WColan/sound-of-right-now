@@ -1,8 +1,10 @@
 import * as Tone from 'tone';
+import { inject } from '@vercel/analytics';
 import { createSoundEngine } from './music/engine.js';
 import { mapWeatherToMusic } from './music/mapper.js';
 import { createInterpolator } from './music/interpolator.js';
 import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
+import { buildShareSearch, parseSharedCoordinates } from './weather/share.js';
 import { getMoonriseTime, getMoonsetTime } from './weather/moon.js';
 import { createWeatherFetcher } from './weather/fetcher.js';
 import { createTideFetcher } from './weather/tides.js';
@@ -10,6 +12,10 @@ import { createAirQualityFetcher } from './weather/airquality.js';
 import { createDisplay } from './ui/display.js';
 import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
+import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
+
+// Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
+inject();
 
 let engine = null;
 let interpolator = null;
@@ -23,6 +29,9 @@ let currentAqiData = null;
 let currentLatitude = null;
 let currentLongitude = null;
 let isPlaying = true; // Track play/pause state for the pause button
+let currentLocationRequestId = 0;
+let userVolumeScale = 0.8;
+let secondaryMenuController = null;
 
 // ── Pressure trend buffer ──
 // Rolling window of the last 3 pressure readings (timestamp + value).
@@ -50,6 +59,7 @@ if (import.meta.hot) {
     if (tideFetcher) tideFetcher.stop();
     if (aqiFetcher) aqiFetcher.stop();
     if (visualizer) visualizer.dispose();
+    if (secondaryMenuController) secondaryMenuController.dispose();
   });
 }
 
@@ -82,6 +92,17 @@ function onWeatherUpdate(weather) {
       musicalParams._meta.sunTransition,
       musicalParams._meta.moonFullness,
     );
+
+    // Update microtonal pitch drift (active for fog, high UV, or extreme heat)
+    const uvNorm = Math.min(1, (weather.uvIndex ?? 0) / 11);
+    engine.updateMicrotonalContext(
+      musicalParams._meta.category,
+      uvNorm,
+      weather.apparentTemperature ?? weather.temperature,
+    );
+
+    // Update wind chime strike frequency from current wind speed
+    engine.updateWindChime(weather.windSpeed);
   }
 
   visualizer.updateState({
@@ -97,6 +118,8 @@ function onWeatherUpdate(weather) {
     cloudCover: weather.cloudCover ?? 0,
     filterWarmth: musicalParams._meta.filterWarmth ?? 0,
     aqiNorm: musicalParams._meta.aqiNorm ?? 0,
+    temperature: weather.temperature,
+    latitude: currentLatitude,
     // Celestial positioning
     sunrise: weather.sunrise,
     sunset: weather.sunset,
@@ -148,6 +171,7 @@ function onWeatherUpdate(weather) {
  * Set up data fetching for a given location.
  */
 async function startForLocation(latitude, longitude, locationName) {
+  const requestId = ++currentLocationRequestId;
   display.setLocation(locationName || 'Loading...');
 
   // Store lat/lng for seasonal awareness and permalink
@@ -155,7 +179,7 @@ async function startForLocation(latitude, longitude, locationName) {
   currentLongitude = longitude;
 
   // Update URL so the current location is shareable
-  history.replaceState(null, '', `?lat=${latitude.toFixed(4)}&lng=${longitude.toFixed(4)}`);
+  history.replaceState(null, '', buildShareSearch(latitude, longitude));
 
   // ── Tear down old audio engine ──
   // Tone.js audio nodes are permanently destroyed by dispose() and cannot be
@@ -167,6 +191,8 @@ async function startForLocation(latitude, longitude, locationName) {
     engine = createSoundEngine();
     engine.start({ bpm: 72 });
     engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+    engine.setUserGainScale(userVolumeScale, 0);
+    engine.setSleepGainScale(1, 0);
     // Recreate interpolator too — it closes over the old (now-disposed) engine
     interpolator = createInterpolator(engine);
     // New engine always starts playing — reset pause button accordingly
@@ -183,14 +209,21 @@ async function startForLocation(latitude, longitude, locationName) {
   currentAqiData = null;
 
   // Set up weather fetching
-  weatherFetcher = createWeatherFetcher(latitude, longitude);
-  weatherFetcher.onUpdate(onWeatherUpdate);
+  const nextWeatherFetcher = createWeatherFetcher(latitude, longitude);
+  nextWeatherFetcher.onUpdate((weather) => {
+    if (requestId !== currentLocationRequestId) return;
+    onWeatherUpdate(weather);
+  });
+  weatherFetcher = nextWeatherFetcher;
 
   // Set up tide fetching (may return null for inland locations)
   try {
-    tideFetcher = await createTideFetcher(latitude, longitude);
-    if (tideFetcher) {
+    const nextTideFetcher = await createTideFetcher(latitude, longitude);
+    if (requestId !== currentLocationRequestId) return;
+    if (nextTideFetcher) {
+      tideFetcher = nextTideFetcher;
       tideFetcher.onUpdate((data) => {
+        if (requestId !== currentLocationRequestId) return;
         currentTideData = data;
       });
       tideFetcher.start();
@@ -201,8 +234,11 @@ async function startForLocation(latitude, longitude, locationName) {
 
   // Set up AQI fetching
   try {
-    aqiFetcher = createAirQualityFetcher(latitude, longitude);
+    const nextAqiFetcher = createAirQualityFetcher(latitude, longitude);
+    if (requestId !== currentLocationRequestId) return;
+    aqiFetcher = nextAqiFetcher;
     aqiFetcher.onUpdate((data) => {
+      if (requestId !== currentLocationRequestId) return;
       currentAqiData = data;
     });
     aqiFetcher.start();
@@ -211,11 +247,16 @@ async function startForLocation(latitude, longitude, locationName) {
   }
 
   // Start weather polling (triggers first onWeatherUpdate)
-  await weatherFetcher.start();
+  await nextWeatherFetcher.start();
+  if (requestId !== currentLocationRequestId) {
+    nextWeatherFetcher.stop();
+    return;
+  }
 
   // Resolve location name from coordinates if needed
   if (!locationName) {
     const name = await reverseGeocode(latitude, longitude);
+    if (requestId !== currentLocationRequestId) return;
     display.setLocation(name);
   }
 }
@@ -259,12 +300,15 @@ async function boot(latitude, longitude, locationName) {
   const volSlider = document.getElementById('volume-slider');
   if (volSlider) {
     // Restore persisted value
-    volSlider.value = localStorage.getItem('masterVolume') ?? 80;
+    const savedPercent = Number(localStorage.getItem('masterVolume'));
+    const safePercent = Number.isFinite(savedPercent) ? Math.max(0, Math.min(100, savedPercent)) : 80;
+    volSlider.value = safePercent;
+    userVolumeScale = safePercent / 100;
+    engine.setUserGainScale(userVolumeScale, 0);
 
     volSlider.addEventListener('input', () => {
-      const userScale = volSlider.value / 100;
-      const weatherScale = interpolator.currentParams?.globalVelocityScale ?? 1;
-      engine.effects.masterVelocity.gain.rampTo(userScale * weatherScale, 0.1);
+      userVolumeScale = volSlider.value / 100;
+      engine.setUserGainScale(userVolumeScale, 0.1);
     });
 
     // Persist preference
@@ -273,25 +317,169 @@ async function boot(latitude, longitude, locationName) {
     });
   }
 
+  // Secondary action menu
+  const menuBtn = document.getElementById('menu-btn');
+  const secondaryMenu = document.getElementById('secondary-menu');
+  secondaryMenuController?.dispose();
+  secondaryMenuController = setupSecondaryMenu({
+    menuBtn,
+    secondaryMenu,
+    keepOpenItemIds: ['sleep-btn', 'share-btn'],
+  });
+
+  // Wire sleep timer — cycles off → 30 → 60 → 90 min
+  const sleepBtn = document.getElementById('sleep-btn');
+  const SLEEP_OPTIONS = [0, 30, 60, 90]; // 0 = off
+  let sleepIndex = 0;
+  let sleepTimeout = null;
+  let sleepFadeTimeout = null;
+
+  function clearSleepTimers() {
+    clearTimeout(sleepTimeout);
+    clearTimeout(sleepFadeTimeout);
+    sleepTimeout = null;
+    sleepFadeTimeout = null;
+  }
+
+  if (sleepBtn) {
+    sleepBtn.addEventListener('click', () => {
+      clearSleepTimers();
+      if (engine) engine.setSleepGainScale(1, 0.3);
+      sleepIndex = (sleepIndex + 1) % SLEEP_OPTIONS.length;
+      const minutes = SLEEP_OPTIONS[sleepIndex];
+      if (minutes === 0) {
+        sleepBtn.textContent = 'sleep';
+        if (engine) engine.setSleepGainScale(1, 2);
+        return;
+      }
+      sleepBtn.textContent = `${minutes}m`;
+      const totalMs = minutes * 60 * 1000;
+      const fadeMs = totalMs - 60_000; // begin fade 60s before end
+      sleepTimeout = setTimeout(() => {
+        if (engine) engine.setSleepGainScale(0, 60);
+        sleepFadeTimeout = setTimeout(() => {
+          if (engine) engine.stop();
+          if (engine) engine.setSleepGainScale(1, 0);
+          isPlaying = false;
+          const pauseBtn = document.getElementById('pause-btn');
+          if (pauseBtn) { pauseBtn.textContent = '▶'; pauseBtn.setAttribute('aria-label', 'play'); }
+          sleepIndex = 0;
+          sleepBtn.textContent = 'sleep';
+        }, 60_000);
+      }, Math.max(0, fadeMs));
+    });
+  }
+
+  // Wire mute panel — per-voice mute toggles
+  const mutePanel = document.getElementById('mute-panel');
+  const mixBtn = document.getElementById('mix-btn');
+  const VOICE_VOLUME_PARAMS = {
+    pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
+    melody: 'melodyVolume', texture: 'textureVolume',
+    percussion: 'percussionVolume', drone: 'droneVolume',
+  };
+  const mutedVoices = new Set();
+
+  if (mixBtn && mutePanel) {
+    mixBtn.addEventListener('click', () => mutePanel.classList.toggle('hidden'));
+  }
+
+  document.querySelectorAll('.mute-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!engine) return;
+      const voice = btn.dataset.voice;
+      const param = VOICE_VOLUME_PARAMS[voice];
+      if (!param) return;
+      if (mutedVoices.has(voice)) {
+        mutedVoices.delete(voice);
+        btn.classList.remove('muted');
+        const savedVol = interpolator.currentParams?.[param] ?? 0;
+        engine.rampParam(param, savedVol, 1);
+      } else {
+        mutedVoices.add(voice);
+        btn.classList.add('muted');
+        engine.rampParam(param, -80, 1);
+      }
+    });
+  });
+
+  // Wire "What am I hearing" overlay
+  const infoBtn = document.getElementById('info-btn');
+  const hearingPanel = document.getElementById('hearing-panel');
+  const hearingContent = document.getElementById('hearing-content');
+  const hearingClose = hearingPanel?.querySelector('.hearing-close');
+  let toggleHearingPanel = null;
+
+  function describeWeatherCategory(cat) {
+    return { storm: 'Stormy', rain: 'Rainy', drizzle: 'Drizzling',
+      fog: 'Foggy', snow: 'Snowing', cloudy: 'Cloudy', clear: 'Clear skies' }[cat] ?? cat;
+  }
+
+  function capitalizeFirst(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function buildHearingText() {
+    const p = interpolator?.currentParams;
+    if (!p) return 'Loading…';
+    const chord = engine?.progressionPlayer?.currentChord;
+    const chordStr = chord ? `${chord.chordRootName} ${chord.quality}` : '—';
+    const velScale = p.globalVelocityScale ?? 1;
+    const timeStr = velScale > 0.8 ? 'Daytime' : velScale > 0.5 ? 'Golden hour' : 'Night';
+    return [
+      `<strong>Key:</strong> ${p.rootNote} ${capitalizeFirst(p.scaleType)}`,
+      `<strong>Mood:</strong> ${capitalizeFirst(p.melodyMood ?? p.weatherCategory)}`,
+      `<strong>Tempo:</strong> ${p.bpm} BPM`,
+      `<strong>Chord:</strong> ${chordStr}`,
+      `<strong>Weather:</strong> ${describeWeatherCategory(p.weatherCategory)}`,
+      `<strong>Time:</strong> ${timeStr}`,
+    ].join('<br>');
+  }
+
+  if (infoBtn && hearingPanel && hearingContent) {
+    toggleHearingPanel = () => {
+      hearingContent.innerHTML = buildHearingText();
+      hearingPanel.classList.toggle('hidden');
+    };
+    infoBtn.addEventListener('click', toggleHearingPanel);
+  }
+  if (hearingClose) {
+    hearingClose.addEventListener('click', () => hearingPanel.classList.add('hidden'));
+  }
+
   // Wire share button — copies current location permalink to clipboard
   const shareBtn = document.getElementById('share-btn');
   if (shareBtn) {
+    let shareFeedbackTimeout = null;
+    const showShareCopiedFeedback = () => {
+      clearTimeout(shareFeedbackTimeout);
+      shareBtn.classList.add('copied');
+      shareFeedbackTimeout = setTimeout(() => {
+        shareBtn.classList.remove('copied');
+      }, 1200);
+    };
+
     shareBtn.addEventListener('click', async () => {
       const url = window.location.href;
+      let copied = false;
       try {
-        await navigator.clipboard.writeText(url);
-        const orig = shareBtn.textContent;
-        shareBtn.textContent = '✓';
-        setTimeout(() => { shareBtn.textContent = orig; }, 2000);
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+          copied = true;
+        } else {
+          throw new Error('Clipboard API unavailable');
+        }
       } catch {
         // Fallback: select the URL from a temporary input
         const tmp = document.createElement('input');
         tmp.value = url;
         document.body.appendChild(tmp);
         tmp.select();
-        document.execCommand('copy');
+        copied = document.execCommand('copy');
         document.body.removeChild(tmp);
       }
+      if (copied) showShareCopiedFeedback();
     });
   }
 
@@ -304,8 +492,20 @@ async function boot(latitude, longitude, locationName) {
         e.preventDefault();
         pauseBtn.click();
         break;
+      case 'Escape':
+        secondaryMenuController?.close();
+        break;
       case 'l': case 'L':
         document.getElementById('location-btn')?.click();
+        break;
+      case 'm': case 'M':
+        mixBtn?.click();
+        break;
+      case '?':
+        toggleHearingPanel?.();
+        break;
+      case '/':
+        if (e.shiftKey) toggleHearingPanel?.();
         break;
       case 'f': case 'F':
         canvas.requestFullscreen?.();
@@ -332,12 +532,13 @@ async function boot(latitude, longitude, locationName) {
   interpolator.update(placeholderParams);
 
   // Fade out overlay, show controls
-  overlay.classList.add('fade-out');
-  setTimeout(() => {
-    infoDisplay.classList.remove('hidden');
-    controls.classList.remove('hidden');
-    document.getElementById('chord-display').classList.remove('hidden');
-  }, 1000);
+  showPrimaryControls({
+    overlay,
+    infoDisplay,
+    controls,
+    chordDisplay: document.getElementById('chord-display'),
+    delayMs: 1000,
+  });
 
   // Connect to real weather data
   await startForLocation(latitude, longitude, locationName);
@@ -348,8 +549,13 @@ async function boot(latitude, longitude, locationName) {
  */
 function init() {
   const listenBtn = document.getElementById('listen-btn');
+  const overlay = document.getElementById('overlay');
+  let isStarting = false;
+  let overlayShortcutController = null;
 
-  listenBtn.addEventListener('click', async () => {
+  const startListening = async () => {
+    if (isStarting) return;
+    isStarting = true;
     listenBtn.textContent = 'Starting...';
     listenBtn.disabled = true;
 
@@ -370,13 +576,11 @@ function init() {
       // Check for permalink ?lat=&lng= params — shared link takes priority.
       // Clear params immediately so a subsequent page reload uses geolocation
       // instead of re-loading the same shared coordinates.
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlLat = parseFloat(urlParams.get('lat'));
-      const urlLng = parseFloat(urlParams.get('lng'));
+      const sharedCoords = parseSharedCoordinates(window.location.search);
       history.replaceState(null, '', window.location.pathname);
 
-      if (!isNaN(urlLat) && !isNaN(urlLng)) {
-        await boot(urlLat, urlLng, null);
+      if (sharedCoords) {
+        await boot(sharedCoords.latitude, sharedCoords.longitude, null);
       } else {
         const browserLoc = await getBrowserLocation();
         if (browserLoc) {
@@ -386,12 +590,24 @@ function init() {
           await boot(40.7128, -74.006, 'New York, NY');
         }
       }
+
+      // Startup succeeded; remove one-time overlay keyboard shortcuts.
+      overlayShortcutController?.dispose();
+      overlayShortcutController = null;
     } catch (err) {
       console.error('Failed to start:', err);
       listenBtn.textContent = 'Error — try again';
       listenBtn.disabled = false;
+      isStarting = false;
     }
-  }, { once: true }); // Only fire once
+  };
+
+  listenBtn.addEventListener('click', startListening);
+  overlayShortcutController = setupOverlayStartShortcuts({
+    overlay,
+    listenBtn,
+    onStart: startListening,
+  });
 }
 
 init();

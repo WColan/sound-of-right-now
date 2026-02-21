@@ -6,7 +6,9 @@ import { createTextureVoice } from './voices/texture.js';
 import { createPercussionVoice } from './voices/percussion.js';
 import { createDroneVoice } from './voices/drone.js';
 import { createMelodyVoice } from './voices/melody.js';
+import { createWindChimeVoice } from './voices/windchime.js';
 import { voiceLead } from './scale.js';
+import { clampPan, createSpatialNode, widthToZ } from './spatial.js';
 import {
   generateProgression, createProgressionPlayer, shouldImmediatelyChange,
 } from './progression.js';
@@ -54,6 +56,18 @@ export function createSoundEngine() {
 
   // Master velocity gain — time-of-day volume scaling
   const masterVelocity = new Tone.Gain(1);
+  let weatherGainScale = 1;
+  let userGainScale = 1;
+  let sleepGainScale = 1;
+
+  function applyMasterGain(duration = 0) {
+    const target = weatherGainScale * userGainScale * sleepGainScale;
+    if (duration > 0) {
+      masterVelocity.gain.linearRampTo(target, duration);
+    } else {
+      masterVelocity.gain.value = target;
+    }
+  }
 
   // ── Parallel sub-bass bus ──
   // Bass and drone panners connect here in addition to the main chorus chain.
@@ -98,6 +112,26 @@ export function createSoundEngine() {
   limiter.connect(waveformAnalyser);
   limiter.toDestination();
 
+  // Listener pose for 3D spatialization.
+  const listener = Tone.getListener?.();
+  if (listener) {
+    listener.positionX.value = 0;
+    listener.positionY.value = 0;
+    listener.positionZ.value = 0;
+    listener.forwardX.value = 0;
+    listener.forwardY.value = 0;
+    listener.forwardZ.value = -1;
+    listener.upX.value = 0;
+    listener.upY.value = 1;
+    listener.upZ.value = 0;
+  }
+
+  const spatialXRange = 1.25;
+  const arpeggioNearZ = -0.45;
+  const arpeggioFarZ = -1.1;
+  const melodyNearZ = -0.35;
+  const melodyFarZ = -0.95;
+
   // Create voices
   const pad = createPadVoice();
   const arpeggio = createArpeggioVoice();
@@ -106,15 +140,44 @@ export function createSoundEngine() {
   const percussion = createPercussionVoice();
   const drone = createDroneVoice();
   const melody = createMelodyVoice();
+  const windChime = createWindChimeVoice();
 
-  // ── Binaural panning ──
-  // Each voice gets a panner node for stereo positioning
-  const padPanner = new Tone.Panner(0);         // Center — already wide from fatsine spread
-  const arpeggioPanner = new Tone.Panner(-0.3);  // Slightly left
-  const bassPanner = new Tone.Panner(0);          // Center
-  const texturePanner = new Tone.Panner(0);       // Center — already diffuse noise
-  const dronePanner = new Tone.Panner(0);         // Center
-  const melodyPanner = new Tone.Panner(0.25);     // Slightly right
+  // Wind chime keeps its own path to reverb but now through a spatial node.
+  const windChimePanner = createSpatialNode(Tone, {
+    pan: 0.15,
+    z: -0.58,
+    range: spatialXRange,
+  });
+
+  // ── Spatialization ──
+  // HRTF Panner3D when available; Tone.Panner fallback otherwise.
+  const padPanner = createSpatialNode(Tone, {
+    pan: 0,
+    z: -0.95,
+    range: spatialXRange,
+  });
+  const arpeggioPanner = createSpatialNode(Tone, {
+    pan: -0.3,
+    z: widthToZ(0.4, arpeggioNearZ, arpeggioFarZ),
+    range: spatialXRange,
+  });
+  const bassPanner = new Tone.Panner(0);          // Keep low end centered and mono-safe.
+  const texturePanner = createSpatialNode(Tone, {
+    pan: 0,
+    z: -1.05,
+    range: spatialXRange,
+  });
+  const dronePanner = new Tone.Panner(0);         // Keep low end centered and mono-safe.
+  const melodyPanner = createSpatialNode(Tone, {
+    pan: 0.25,
+    z: widthToZ(0.3, melodyNearZ, melodyFarZ),
+    range: spatialXRange,
+  });
+  const percussionPanner = createSpatialNode(Tone, {
+    pan: 0,
+    z: -0.9,
+    range: spatialXRange,
+  });
 
   // ── Stereo wideners — wind-driven spatial expansion ──
   // Arpeggio and melody get StereoWidener nodes so calm = intimate, gusty = wide.
@@ -126,32 +189,37 @@ export function createSoundEngine() {
   // fatsine pads have energy down to ~60 Hz; this creates headroom for the bass.
   const padHPF = new Tone.Filter({ frequency: 90, type: 'highpass', rolloff: -12 });
 
-  // Connect voices -> HPF/panners -> wideners/chorus bus
+  // Connect voices -> spatial nodes -> wideners/chorus bus
   pad.output.connect(padHPF);
-  padHPF.connect(padPanner);
-  padPanner.connect(chorus);
+  padHPF.connect(padPanner.node);
+  padPanner.node.connect(chorus);
 
-  arpeggio.output.connect(arpeggioPanner);
-  arpeggioPanner.connect(arpeggioWidener);
+  arpeggio.output.connect(arpeggioPanner.node);
+  arpeggioPanner.node.connect(arpeggioWidener);
   arpeggioWidener.connect(chorus);
 
   bass.output.connect(bassPanner);
   bassPanner.connect(chorus);
   bassPanner.connect(subBus);  // Second connection — parallel sub-bass tap
 
-  texture.output.connect(texturePanner);
-  texturePanner.connect(chorus);
+  texture.output.connect(texturePanner.node);
+  texturePanner.node.connect(chorus);
 
   drone.output.connect(dronePanner);
   dronePanner.connect(chorus);
   dronePanner.connect(subBus);  // Second connection — parallel sub-bass tap
 
-  melody.output.connect(melodyPanner);
-  melodyPanner.connect(melodyWidener);
+  melody.output.connect(melodyPanner.node);
+  melodyPanner.node.connect(melodyWidener);
   melodyWidener.connect(chorus);
 
-  // Percussion → dedicated short reverb → masterVelocity (bypasses shared effects chain)
-  percussionReverb.connect(masterVelocity);
+  // Wind chime connects directly to reverb (no chorus/delay smear).
+  windChime.output.connect(windChimePanner.node);
+  windChimePanner.node.connect(reverb);
+
+  // Percussion → dedicated short reverb → spatial panner → masterVelocity
+  percussionReverb.connect(percussionPanner.node);
+  percussionPanner.node.connect(masterVelocity);
   percussion.output.connect(percussionReverb);
 
   // Track current musical state
@@ -162,10 +230,61 @@ export function createSoundEngine() {
   let lastPadVoicing = null;
   let lastBassNote = null;        // Needed for resume() re-attack
   let lastDroneRootName = null;   // Needed for resume() re-attack
+  let windChimeWasActive = false; // Needed for resume() re-activation
 
   // Celestial context — updated from weather updates, used by melody for golden-hour boosts
   let currentSunTransition = 0;
   let currentMoonFullness = 0;
+
+  // Melody mood — tracked so bass walking can be triggered on each chord change
+  let currentMelodyMood = 'calm';
+
+  // Microtonal drift — random walk on synth detune AudioParams
+  let microtonalInterval = null;
+
+  function startMicrotonal() {
+    if (microtonalInterval) return;
+    microtonalInterval = setInterval(() => {
+      // Random-walk pad detune (synthA and synthB drift in opposite directions for width)
+      const padStep = (Math.random() - 0.5) * 4;
+      const padCurrent = pad.synthA?.detune?.value ?? 0;
+      const padNext = Math.max(-18, Math.min(18, padCurrent + padStep));
+      pad.synthA?.detune?.rampTo(padNext, 3);
+      pad.synthB?.detune?.rampTo(-padNext * 0.7, 4);
+
+      // Arpeggio detune drifts more subtly
+      const arpStep = (Math.random() - 0.5) * 3;
+      const arpCurrent = arpeggio.synth?.detune?.value ?? 0;
+      const arpNext = Math.max(-12, Math.min(12, arpCurrent + arpStep));
+      arpeggio.synth?.detune?.rampTo(arpNext, 2);
+    }, 3000);
+  }
+
+  function stopMicrotonal() {
+    if (microtonalInterval) {
+      clearInterval(microtonalInterval);
+      microtonalInterval = null;
+    }
+    // Return voices to concert pitch over 5 seconds
+    pad.synthA?.detune?.rampTo(0, 5);
+    pad.synthB?.detune?.rampTo(0, 5);
+    arpeggio.synth?.detune?.rampTo(0, 3);
+  }
+
+  function setSpatialPan(node, pan, duration = 0) {
+    if (pan == null) return;
+    node.setPan(clampPan(pan), duration);
+  }
+
+  function setArpeggioDepth(width, duration = 0) {
+    if (width == null) return;
+    arpeggioPanner.setZ(widthToZ(width, arpeggioNearZ, arpeggioFarZ), duration);
+  }
+
+  function setMelodyDepth(width, duration = 0) {
+    if (width == null) return;
+    melodyPanner.setZ(widthToZ(width, melodyNearZ, melodyFarZ), duration);
+  }
 
   // External chord change listener (for visualizer)
   let externalChordChangeCallback = null;
@@ -192,10 +311,16 @@ export function createSoundEngine() {
 
       // Update bass
       lastBassNote = chord.bassNote;
-      if (index === 0 && total > 0) {
-        bass.playNote(chord.bassNote);
+      if (currentMelodyMood === 'tense' || currentMelodyMood === 'melancholy') {
+        // Walking bass — Tone.Sequence drives quarter-note root/fifth/passing/approach
+        bass.enableWalking(chord.chordTones, chord.scaleTones);
       } else {
-        bass.changeNote(chord.bassNote);
+        bass.disableWalking();
+        if (index === 0 && total > 0) {
+          bass.playNote(chord.bassNote);
+        } else {
+          bass.changeNote(chord.bassNote);
+        }
       }
 
       // Update drone — transpose chord root to octave 1
@@ -205,6 +330,9 @@ export function createSoundEngine() {
       } else {
         drone.changeNote(chord.chordRootName);
       }
+
+      // Update wind chime note pool from current scale tones
+      windChime.setNotes(chord.scaleTones);
 
       // Update melody — set chord context and trigger potential phrase
       melody.setChordContext(chord.chordTones, chord.scaleTones);
@@ -245,19 +373,42 @@ export function createSoundEngine() {
     },
   });
 
+  const spatialMode = [
+    padPanner,
+    arpeggioPanner,
+    texturePanner,
+    melodyPanner,
+    percussionPanner,
+    windChimePanner,
+  ].every((node) => node.mode === 'hrtf') ? 'hrtf' : 'stereo-fallback';
+
   return {
     // Expose for visualization
     analyser,
     waveformAnalyser,
 
     // Expose voices for direct control if needed
-    voices: { pad, arpeggio, bass, texture, percussion, drone, melody },
+    voices: { pad, arpeggio, bass, texture, percussion, drone, melody, windChime },
 
     // Expose effects for direct control
     effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain, percussionReverb, arpeggioWidener, melodyWidener, padHPF },
 
-    // Expose panners
-    panners: { padPanner, arpeggioPanner, bassPanner, texturePanner, dronePanner, melodyPanner },
+    // Expose panners/spatial nodes for debugging.
+    panners: {
+      padPanner: padPanner.node,
+      arpeggioPanner: arpeggioPanner.node,
+      bassPanner,
+      texturePanner: texturePanner.node,
+      dronePanner,
+      melodyPanner: melodyPanner.node,
+      percussionPanner: percussionPanner.node,
+      windChimePanner: windChimePanner.node,
+    },
+
+    spatial: {
+      mode: spatialMode,
+      xRange: spatialXRange,
+    },
 
     // Expose progression player for external access
     progressionPlayer,
@@ -274,6 +425,37 @@ export function createSoundEngine() {
     updateCelestialContext(sunTransition, moonFullness) {
       currentSunTransition = sunTransition ?? 0;
       currentMoonFullness = moonFullness ?? 0;
+    },
+
+    /**
+     * Start or stop microtonal pitch drift based on current conditions.
+     * Active for fog, high UV (uvNorm > 0.7), or apparent temperature > 30°C.
+     * Called from main.js on each weather update.
+     */
+    updateMicrotonalContext(weatherCategory, uvNorm, apparentTemp) {
+      const active = weatherCategory === 'fog' || uvNorm > 0.7 || (apparentTemp ?? 0) > 30;
+      if (active) startMicrotonal();
+      else stopMicrotonal();
+    },
+
+    /**
+     * Update wind chime wind speed so it can adjust its strike interval.
+     * Called from main.js on each weather update.
+     */
+    updateWindChime(windSpeed) {
+      windChime.setWindSpeed(windSpeed);
+    },
+
+    /** User-controlled master gain scale (volume slider). */
+    setUserGainScale(scale, rampTime = 0.1) {
+      userGainScale = scale ?? 1;
+      applyMasterGain(rampTime);
+    },
+
+    /** Sleep timer attenuation (1 = normal, 0 = silent). */
+    setSleepGainScale(scale, rampTime = 0.1) {
+      sleepGainScale = scale ?? 1;
+      applyMasterGain(rampTime);
     },
 
     /**
@@ -298,7 +480,7 @@ export function createSoundEngine() {
         droneVolume, melodyVolume,
         padBrightness, padSpread,
         bassCutoff,
-        arpeggioPattern, arpeggioOctave,
+        arpeggioPattern,
         arpeggioFilterCutoff,
         reverbDecay, reverbWet,
         chorusDepth,
@@ -307,6 +489,7 @@ export function createSoundEngine() {
         lfoRate, lfoDepth,
         rhythmDensity, percussionPan,
         arpeggioPan, melodyPan,
+        arpeggioWidth, melodyWidth,
         globalVelocityScale,
         tideLevel,
         textureAutoFilterRate, textureAutoFilterDepth,
@@ -366,6 +549,7 @@ export function createSoundEngine() {
       }
       percussion.setDensity(rhythmDensity ?? 0.2);
       percussion.panner.pan.value = percussionPan ?? 0;
+      setSpatialPan(percussionPanner, (percussionPan ?? 0) * 0.75, 0);
       percussion.membrane.volume.value = percussionVolume ?? -22;
       percussion.metal.volume.value = (percussionVolume ?? -22) - 4;
       percussion.start();
@@ -376,7 +560,10 @@ export function createSoundEngine() {
       drone.setFilterCutoff(droneCutoff ?? 200);
 
       // Melody
-      if (melodyMood) melody.setMood(melodyMood);
+      if (melodyMood) {
+        melody.setMood(melodyMood);
+        currentMelodyMood = melodyMood;
+      }
       melody.synth.volume.value = melodyVolume ?? -20;
 
       // Timbre profile — oscillator type + envelope character across voices
@@ -391,13 +578,18 @@ export function createSoundEngine() {
       reverb.wet.value = reverbWet ?? 0.3;
       chorus.depth = chorusDepth ?? 0.5;
       masterFilter.frequency.value = masterFilterCutoff ?? 8000;
+      if (arpeggioWidth != null) arpeggioWidener.width.value = arpeggioWidth;
+      if (melodyWidth != null) melodyWidener.width.value = melodyWidth;
 
-      // Master velocity (time-of-day volume)
-      masterVelocity.gain.value = globalVelocityScale ?? 1.0;
+      // Master velocity (time-of-day volume), composed with user + sleep gain.
+      weatherGainScale = globalVelocityScale ?? 1.0;
+      applyMasterGain(0);
 
-      // Binaural panning
-      if (arpeggioPan != null) arpeggioPanner.pan.value = arpeggioPan;
-      if (melodyPan != null) melodyPanner.pan.value = melodyPan;
+      // Spatial panning + depth
+      setSpatialPan(arpeggioPanner, arpeggioPan ?? -0.3, 0);
+      setSpatialPan(melodyPanner, melodyPan ?? 0.25, 0);
+      setArpeggioDepth(arpeggioWidth ?? 0.4, 0);
+      setMelodyDepth(melodyWidth ?? 0.3, 0);
 
       // BPM
       Tone.getTransport().bpm.value = bpm || 72;
@@ -437,9 +629,16 @@ export function createSoundEngine() {
         case 'lfoDepth': bass.setLFO(null, value); break;
 
         // Spatial / Panning
-        case 'percussionPan': percussion.setPan(value, duration); break;
-        case 'arpeggioPan': arpeggioPanner.pan.linearRampTo(value, duration); break;
-        case 'melodyPan': melodyPanner.pan.linearRampTo(value, duration); break;
+        case 'percussionPan':
+          percussion.setPan(value, duration);
+          setSpatialPan(percussionPanner, value * 0.75, duration);
+          break;
+        case 'arpeggioPan':
+          setSpatialPan(arpeggioPanner, value, duration);
+          break;
+        case 'melodyPan':
+          setSpatialPan(melodyPanner, value, duration);
+          break;
 
         // Tempo
         case 'bpm': Tone.getTransport().bpm.rampTo(value, duration); break;
@@ -456,7 +655,8 @@ export function createSoundEngine() {
 
         // Master velocity (time-of-day volume)
         case 'globalVelocityScale':
-          masterVelocity.gain.linearRampTo(value, duration);
+          weatherGainScale = value;
+          applyMasterGain(duration);
           break;
 
         // Sub-bass bus gain (weather-driven physical impact)
@@ -474,12 +674,21 @@ export function createSoundEngine() {
           delay.feedback.rampTo(value, duration);
           break;
 
+        // Wind chime volume — also activates/deactivates the chime voice
+        case 'windChimeVolume':
+          windChime.output.volume.rampTo(value, duration);
+          windChimeWasActive = value > -70;
+          windChime.setActive(windChimeWasActive);
+          break;
+
         // Stereo width (wind-driven — calm = intimate, gusty = wide)
         case 'arpeggioWidth':
           arpeggioWidener.width.rampTo(value, duration);
+          setArpeggioDepth(value, duration);
           break;
         case 'melodyWidth':
           melodyWidener.width.rampTo(value, duration);
+          setMelodyDepth(value, duration);
           break;
 
         // Pressure — regenerate progression with new harmonic rhythm
@@ -543,7 +752,10 @@ export function createSoundEngine() {
         case 'noiseType': texture.setNoiseType(value); break;
         case 'padSpread': pad.setSpread(value); break;
 
-        case 'melodyMood': melody.setMood(value); break;
+        case 'melodyMood':
+          melody.setMood(value);
+          currentMelodyMood = value;
+          break;
 
         case 'timbreProfile':
           pad.setTimbreProfile(value);
@@ -563,7 +775,8 @@ export function createSoundEngine() {
       percussion.stop();
       drone.stop();
       melody.stop();
-      progressionPlayer.stop();
+      windChime.setActive(false);
+      progressionPlayer.pause();
       // pause() preserves Transport clock position so resume() continues mid-phrase.
       // dispose() will still call stop() which resets position, but that's fine
       // since the engine is being torn down entirely.
@@ -595,12 +808,14 @@ export function createSoundEngine() {
       arpeggio.start();
       texture.start();
       percussion.start();
-      progressionPlayer.start();
+      if (windChimeWasActive) windChime.setActive(true);
+      progressionPlayer.resume();
       Tone.getTransport().start();
     },
 
     dispose() {
       this.stop();
+      stopMicrotonal();
       pad.dispose();
       arpeggio.dispose();
       bass.dispose();
@@ -608,14 +823,17 @@ export function createSoundEngine() {
       percussion.dispose();
       drone.dispose();
       melody.dispose();
+      windChime.dispose();
       progressionPlayer.dispose();
-      // Panners
-      padPanner.dispose();
-      arpeggioPanner.dispose();
+      // Spatial panners
+      padPanner.node.dispose();
+      arpeggioPanner.node.dispose();
       bassPanner.dispose();
-      texturePanner.dispose();
+      texturePanner.node.dispose();
       dronePanner.dispose();
-      melodyPanner.dispose();
+      melodyPanner.node.dispose();
+      percussionPanner.node.dispose();
+      windChimePanner.node.dispose();
       // Effects
       chorus.dispose();
       delay.dispose();

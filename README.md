@@ -2,142 +2,187 @@
 
 A generative ambient music web app that sonifies live weather and environmental conditions. Every location sounds different, every hour sounds different, and the music evolves continuously without repeating.
 
-Open the app, share your location (or search for a city), and listen to the weather.
+Open the app, share your location (or search for any city), and listen to the weather.
 
 ## How It Works
 
-Real-time environmental data is fetched from free public APIs and mapped to musical parameters through a pure-function pipeline:
+Real-time environmental data is fetched from public APIs and mapped through a pure-function music pipeline:
 
 ```
-[Weather APIs] → [Mapper] → [Interpolator] → [Sound Engine] → [Audio Output]
-                                                    ↓
-                                              [Visualizer]
+[Weather APIs] -> [Mapper] -> [Interpolator] -> [Sound Engine] -> [Audio Output]
+                                                    |
+                                                    v
+                                               [Visualizer]
 ```
 
-**Weather conditions** control the texture — rain brings pink noise and dripping percussion patterns, storms bring brown noise and driving rhythms, fog brings ethereal suspended chords, clear skies bring minimal, open soundscapes.
+Core mappings:
 
-**Temperature** selects the musical mode (cold = dark Locrian/Aeolian, warm = bright Ionian/Lydian) and root note, creating a distinct harmonic identity for each climate.
-
-**Time of day** shapes brightness — filters open at noon, close at night. Volume follows a natural day/night curve. Golden hour (near sunrise/sunset) applies a warm filter reduction.
-
-**Wind** drives rhythmic density, arpeggio direction, and stereo panning of percussion.
-
-**Atmospheric pressure** controls bass depth and harmonic rhythm — low pressure systems produce faster chord changes and deeper bass, while high pressure brings slow-moving, stable harmony.
-
-**Humidity** controls reverb — dry air is intimate, humid air is spacious and washed.
-
-**Moon phase** modulates LFO depth, rate, and chorus — full moon = more movement.
-
-**Tides** (coastal locations only, via NOAA) swell the bass volume with water level.
-
-**UV index** brightens the arpeggio's filter cutoff — high UV = shimmering high frequencies.
-
-**Air quality (AQI)** creates a haze effect — polluted air muffles the master filter and increases reverb, like hearing music through thick air.
-
-**Season** subtly shifts overall brightness — summer is brighter, winter is darker, with hemisphere awareness.
+- **Weather category** sets harmonic mood and texture (clear/cloudy/fog/drizzle/rain/snow/storm).
+- **Temperature + apparent temperature** choose mode/root and influence tempo and timbre profile.
+- **Time of day + sunrise/sunset proximity** shape brightness, volume scaling, and golden-hour warmth.
+- **Wind speed/direction** drive rhythmic density, stereo movement, filter sweeps, and wind-chime activity.
+- **Pressure + pressure trend** control harmonic rhythm, low-end behavior, and tension/brightness shifts.
+- **Humidity** controls reverb tail/wetness and subtle brightness.
+- **Cloud cover** dims brightness and master filter.
+- **Moon phase/fullness** modulate LFO and chorus behavior.
+- **AQI** introduces haze (filter damping + wetter reverb).
+- **Tides** (coastal) swell bass response.
+- **Season + latitude** add hemisphere-aware seasonal modulation.
+- **UV index** opens arpeggio brightness and can trigger microtonal drift context.
 
 ## Voices
 
-The sound engine has 7 independent voices, each with a distinct role:
+The engine runs **8 voices**:
 
-| Voice | Oscillator | Role |
-|-------|-----------|------|
-| **Pad** | Dual fatsine PolySynth (A/B crossfade) | Sustained chords with seamless 3-second crossfade transitions between chord changes. 3 detuned sines per note for warm chorusing. |
-| **Arpeggio** | Fatsine (2 voices, 12 cent spread) | Rhythmic melodic patterns cycling through chord tones. 8-step Sequence with 4 weather-driven rhythm templates (ethereal, flowing, rippling, cascading). |
-| **Bass** | MonoSynth (sawtooth) | Deep foundation with portamento glide between chord roots. LFO-modulated filter via additive gain node. |
-| **Drone** | Dual sine (root + fifth) | Barely-audible sub-bass at octave 1. Felt more than heard. Always present, volume varies with pressure. |
-| **Melody** | Triangle Synth | Occasional 3-5 note phrases triggered probabilistically (25-60%) on chord changes. Weighted note selection favoring stepwise motion. |
-| **Texture** | NoiseSynth + AutoFilter | Ambient noise layer (pink/white/brown depending on weather) with rain drop overlay. |
-| **Percussion** | MembraneSynth + MetalSynth | Subtle rhythmic punctuation in 16-step patterns. 5 weather-driven categories: minimal, pulse, dripping, driving, ghost. |
+| Voice | Role |
+|-------|------|
+| **Pad** | Sustained harmonic bed using dual-synth A/B crossfades for smooth chord transitions |
+| **Arpeggio** | Chord-aware rhythmic motion with weather-driven rhythm templates |
+| **Bass** | Foundation layer with optional walking-bass behavior in darker moods |
+| **Drone** | Sub root+fifth support, pressure/category-shaped filtering |
+| **Melody** | Probabilistic phrase generator responding to chord and celestial context |
+| **Texture** | Atmospheric noise layer with optional rain-drop transient overlay |
+| **Percussion** | Subtle membrane/metal patterns by weather category |
+| **Wind Chime** | Sparse high-register stochastic notes activated by wind |
 
-## Audio Signal Chain
+## Audio Architecture
+
+Main path:
 
 ```
-[Voices] → [Per-voice Panners] → [Chorus] → [FeedbackDelay] → [Reverb] → [Master Filter] → [Master Velocity] → [Limiter] → [Analyser] → [Destination]
+[Pad/Arp/Bass/Texture/Drone/Melody via spatial panners]
+  -> [Chorus] -> [Delay] -> [Reverb] -> [Master Filter]
+  -> [Master Gain Stack] -> [Limiter] -> [Analysers] -> [Destination]
 ```
 
-- **Binaural panning** spreads voices across the stereo field (arpeggio left, melody right, bass/pad/drone center)
-- **Master velocity** applies time-of-day volume scaling (night = 0.4x, noon = 1.0x)
-- **Smooth interpolation** — continuous parameters (volume, filters, panning) ramp over 3-45 seconds; discrete parameters (key, mode, patterns) snap at musically appropriate moments
+Additional paths:
 
-## Chord Progressions
+- **Percussion** uses a dedicated short reverb into the master gain stack.
+- **Bass + Drone** also feed a parallel sub-bass bus (lowpass + saturation + gain) into the master gain stack.
+- **Master Gain Stack** composes weather gain, user volume slider, and sleep-fade attenuation.
 
-Chords are generated from diatonic 7th chord templates driven by weather:
+### Spatial Audio
 
-- **Clear** → calm progressions (I-IV-I-V)
-- **Cloudy** → gentle movement (I-VI-II-V)
-- **Rain/Drizzle** → melancholy (I-IV-VII-III)
-- **Storm** → tense 8-chord cycles (I-II-V-I-VII-III-VI-IV)
-- **Fog** → suspended, minimal (I-IV-I)
-- **Snow** → sparse (I-V-IV-I)
+- Uses **Tone.js `Panner3D` with HRTF** on supported browsers for binaural headphone imaging.
+- Falls back automatically to stereo `Panner` if `Panner3D` is unavailable.
+- Arpeggio, melody, percussion, texture, pad, and wind-chime are spatialized; bass and drone remain center-focused for mono-safe low end.
+- Existing weather-driven pan/width params are reused to control 3D position/depth.
+- This is **Web Audio app-level spatialization**. It does not force Apple OS-level personalized/head-tracked Spatial Audio behavior.
 
-Voice leading minimizes semitone movement between voicings. Harmonic rhythm (time per chord) is pressure-driven: 2 measures in storms, up to 8 measures in high-pressure calm.
+Transition behavior:
+
+- Continuous parameters ramp smoothly (filters, volume, panning, width, etc.).
+- Discrete parameters switch at musical boundaries (key/mode/pattern category).
+
+## Harmony & Progression
+
+Progressions are generated from diatonic 7th-chord vocabularies with mood-aware Markov weighting:
+
+- Weather category maps to mood (`calm`, `gentle`, `melancholy`, `tense`, `suspended`, `sparse`).
+- Harmonic rhythm is pressure-driven (storm faster, stable high pressure slower).
+- Secondary dominants are injected probabilistically by mood.
+- Bass inversion selection minimizes leap size between chords.
+- Weather category shifts can trigger immediate progression swaps for dramatic changes (storm/fog/snow).
 
 ## Visualization
 
-A full-screen canvas renders a generative landscape synchronized with the weather and audio:
+The full-screen canvas visualizer is weather/audio reactive and currently includes:
 
-- **Sky gradient** shifts with time of day (dawn gold, night deep blue, storm desaturation)
-- **Stars** visible at night with independent twinkle rates
-- **Moon** with correct phase rendering (crescent shadow) and fullness-based glow
-- **Aurora/shimmer bands** appear near sunrise/sunset
-- **Weather particles** — rain streaks, snowflakes with wobble, fog layers
-- **Procedural landscape** silhouette from layered sine waves
-- **Water wave line** at the base, amplitude modulated by bass FFT energy and tide level
-- **Atmospheric particles** drift with wind and pulse with mid-frequency audio
+- Dynamic sky palette by time-of-day + weather
+- Sun and moon positioning from rise/set times
+- Moon phase shading and fullness glow
+- Stars with FFT-reactive twinkle at night
+- Sunrise/sunset aurora bands
+- Animated clouds with wind drift
+- Weather particles (rain/snow/fog) and rain splash ripples
+- Lightning flashes in storms
+- Waveform-reactive landscape silhouette
+- Tide + bass-reactive water layer
+- Fireflies (conditional warm-night behavior)
+- Snow accumulation and melt
+- Heat shimmer under hot clear/cloudy conditions
+- Chord name + progression timeline overlay
+
+## Controls
+
+UI controls include:
+
+- Play/pause
+- Master volume slider (persisted)
+- Change location search
+- Mix panel (per-voice mute toggles)
+- "What am I hearing?" contextual panel
+- Sleep timer (off/30/60/90 with 60s fade-out)
+- Share link (lat/lng permalink copy)
+
+Keyboard shortcuts:
+
+- `Space`: play/pause
+- `L`: open location search
+- `M`: open/close mix panel
+- `?`: open/close "What am I hearing?"
+- `Escape`: close action menu
+- `F`: request fullscreen
 
 ## Data Sources
 
-All APIs are free and require no API keys:
+All APIs used are free and require no API keys:
 
 | Source | Data | Polling Interval |
-|--------|------|-----------------|
-| [Open-Meteo Weather](https://open-meteo.com) | Temperature, humidity, pressure, wind, weather code, sunrise/sunset, UV index | 5 minutes |
+|--------|------|------------------|
+| [Open-Meteo Weather](https://open-meteo.com) | Temperature, apparent temperature, humidity, pressure, wind, weather code, cloud cover, UV, sunrise/sunset | 1 minute |
 | [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | US AQI, PM2.5 | 15 minutes |
-| [NOAA CO-OPS](https://tidesandcurrents.noaa.gov/api/) | Tide water level (coastal US only) | 6 minutes |
-| Client-side calculation | Moon phase, seasonal factor | Per weather update |
-| Browser Geolocation API | Latitude/longitude | Once at start |
+| [NOAA CO-OPS](https://tidesandcurrents.noaa.gov/api/) | Tide water level (nearest coastal station) | 10 minutes |
+| Client-side calculation | Moon phase/fullness, season factor, pressure trend | Per weather update |
+| Browser Geolocation API | Initial coordinates | On startup |
 
 ## Tech Stack
 
-- **[Tone.js](https://tonejs.github.io/) v15** — Web Audio synthesis, scheduling, effects
-- **[Vite](https://vite.dev/) v7** — Dev server with HMR, production bundler
-- **Vanilla JS** — No framework. ES modules, no build-time transpilation.
-- **Canvas 2D** — All visualization rendered directly, no libraries
+- [Tone.js](https://tonejs.github.io/) v15
+- [Vite](https://vite.dev/) v7
+- Vanilla JavaScript (ES modules)
+- Canvas 2D
+- Vitest
 
 ## Project Structure
 
 ```
 src/
-  main.js                    # Boot sequence, data fetcher wiring, HMR cleanup
+  main.js
   music/
-    engine.js                # Top-level: voices, effects chain, progression player, panners
-    mapper.js                # Pure function: WeatherState → MusicalParams
-    interpolator.js          # Smooth transitions: ramps continuous, snaps discrete
-    progression.js           # Chord progression templates, harmonic rhythm, Transport-synced player
-    scale.js                 # Modes, MIDI conversion, diatonic chords, voice leading
+    engine.js
+    engine.spatial.test.js
+    mapper.js
+    interpolator.js
+    progression.js
+    progression.test.js
+    scale.js
+    spatial.js
+    spatial.test.js
     voices/
-      pad.js                 # Dual fatsine A/B crossfade PolySynth
-      arpeggio.js            # 8-step Sequence with rhythm templates
-      bass.js                # MonoSynth with LFO-modulated filter
-      drone.js               # Root + fifth sine sub-bass
-      melody.js              # Probabilistic phrase generator
-      texture.js             # NoiseSynth + AutoFilter + rain drops
-      percussion.js          # 16-step patterns with MembraneSynth + MetalSynth
+      pad.js
+      arpeggio.js
+      bass.js
+      drone.js
+      melody.js
+      texture.js
+      percussion.js
+      windchime.js
   weather/
-    fetcher.js               # Open-Meteo weather + UV polling
-    airquality.js            # Open-Meteo AQI polling
-    tides.js                 # NOAA tide station finder + water level polling
-    location.js              # Browser geolocation, city search, reverse geocode
-    codes.js                 # WMO weather code → category mapping
-    moon.js                  # Moon phase + fullness calculation
-    season.js                # Hemisphere-aware seasonal factor
+    fetcher.js
+    fetcher.test.js
+    airquality.js
+    tides.js
+    location.js
+    codes.js
+    moon.js
+    season.js
   ui/
-    display.js               # Location + weather info overlay
-    controls.js              # City search UI
-    visualizer.js            # Canvas-based generative landscape
+    display.js
+    controls.js
+    visualizer.js
   styles/
-    main.css                 # Minimal styles for overlay, controls, canvas
+    main.css
 ```
 
 ## Getting Started
@@ -149,32 +194,37 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173, click **Listen**, and allow location access (or use the city search).
+Open `http://localhost:5173`, click **Listen**, and allow location access (or use search).
 
-### Build for Production
+## Scripts
 
 ```bash
+npm run dev
 npm run build
 npm run preview
+npm test
+npm run test:watch
 ```
 
-The built output is in `dist/` and can be deployed to any static hosting (Netlify, Vercel, GitHub Pages, etc.).
+## Testing
+
+Current automated coverage includes:
+
+- Weather timezone/UV correctness
+- Fetcher lifecycle race safety (stale in-flight response suppression)
+- Progression player pause/resume lifecycle behavior
+
+Run tests:
+
+```bash
+npm test
+```
 
 ## Browser Requirements
 
-- A modern browser with Web Audio API support (Chrome, Firefox, Safari, Edge)
-- Geolocation permission for automatic location (optional — you can search for any city)
-- Audio context requires a user click to start (browser autoplay policy)
-
-## Planned Features
-
-These visualization enhancements are designed but not yet implemented:
-
-- [ ] Chord name display — current chord as subtle overlay with fade transitions
-- [ ] Progression timeline bar — visual indicator of position in chord cycle
-- [ ] Waveform-reactive landscape — terrain breathes with waveform analyser data
-- [ ] Animated cloud layer — ellipse clouds drifting with wind speed/direction
-- [ ] Dynamic color palette — CSS custom properties driven by weather state for UI cohesion
+- Modern browser with Web Audio API support (Chrome, Firefox, Safari, Edge)
+- User gesture to start audio context (autoplay policy)
+- Geolocation permission is optional (location search works without it)
 
 ## License
 

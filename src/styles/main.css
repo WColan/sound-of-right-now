@@ -49,31 +49,52 @@ canvas#visualizer {
 
 .overlay-content {
   text-align: center;
-  max-width: 400px;
-  padding: 2rem;
+  max-width: 430px;
+  padding: 2.15rem;
 }
 
-.overlay-content h1 {
-  font-size: 1.8rem;
-  font-weight: 300;
-  letter-spacing: 0.15em;
+.brand-chip {
+  display: inline-block;
+  padding: 0.18rem 0.56rem 0.16rem;
+  margin-bottom: 1.02rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  margin-bottom: 1rem;
+  line-height: 1;
 }
 
-.overlay-content p {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  margin-bottom: 2.5rem;
+.overlay-title {
+  font-size: 1.86rem;
+  font-weight: 300;
+  letter-spacing: 0.052em;
+  line-height: 1.2;
+  margin-bottom: 1rem;
+  text-transform: none;
+}
+
+.overlay-title-line {
+  display: block;
+}
+
+.overlay-tagline {
+  margin: 0 auto 2.25rem;
+  font-size: clamp(0.7rem, 2.3vw, 1.05rem);
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.28;
+  letter-spacing: 0.006em;
+  white-space: nowrap;
 }
 
 .listen-btn {
   background: none;
   border: 1px solid var(--text-secondary);
   color: var(--text-primary);
-  padding: 0.8rem 2.5rem;
-  font-size: 0.85rem;
+  padding: 0.86rem 2.7rem;
+  font-size: 0.9rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   cursor: pointer;
@@ -142,7 +163,7 @@ canvas#visualizer {
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 0.7rem;
+  font-size: 0.76rem;
   letter-spacing: 0.1em;
   cursor: pointer;
   font-family: inherit;
@@ -151,26 +172,114 @@ canvas#visualizer {
 }
 
 #pause-btn {
-  font-size: 1rem; /* Icon glyphs need a bit more room than the text buttons */
+  font-size: 1.2rem; /* Icon glyphs need a bit more room than the text buttons */
   letter-spacing: 0;
   line-height: 1;
 }
 
-#share-btn {
-  font-size: 0.9rem;
-  letter-spacing: 0;
+#menu-btn {
+  color: rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0.1rem 0.58rem;
+  min-width: 2.1rem;
+  text-align: center;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.01);
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+#menu-btn:hover,
+#menu-btn:focus-visible {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+
+#menu-btn[aria-expanded="true"] {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.menu-glyph {
+  display: inline-block;
+  font-size: 1.16rem;
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  transform: translateY(-1px);
 }
 
 .control-btn:hover {
   color: var(--text-secondary);
 }
 
+/* Secondary actions menu */
+.secondary-menu {
+  position: fixed;
+  right: 2rem;
+  bottom: 4.2rem;
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 150px;
+  padding: 0.45rem;
+  background: rgba(10, 10, 15, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: opacity 0.2s ease;
+}
+
+.secondary-menu.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.menu-item {
+  text-align: left;
+  padding: 0.4rem 0.45rem;
+  border-radius: 3px;
+}
+
+#share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.share-check {
+  width: 0.7rem;
+  font-size: 0.62rem;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.8);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  pointer-events: none;
+}
+
+#share-btn.copied .share-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
 /* Volume slider */
 .volume-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 70px;
-  height: 2px;
+  width: 86px;
+  height: 2.5px;
   background: rgba(255, 255, 255, 0.15);
   outline: none;
   cursor: pointer;
@@ -181,8 +290,8 @@ canvas#visualizer {
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--text-secondary);
   cursor: pointer;
@@ -190,8 +299,8 @@ canvas#visualizer {
 }
 
 .volume-slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--text-secondary);
   cursor: pointer;
@@ -236,6 +345,55 @@ canvas#visualizer {
   border-color: var(--accent);
 }
 
+.current-location-btn {
+  margin-top: 0.4rem;
+  width: 220px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  padding: 0.38rem 0.62rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-align: left;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.random-location-btn {
+  margin-top: 0.3rem;
+}
+
+.current-location-btn:hover,
+.current-location-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.current-location-btn.hidden {
+  display: none;
+}
+
+.current-location-btn[aria-busy="true"] {
+  opacity: 0.8;
+  cursor: wait;
+}
+
+.current-location-glyph {
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.random-location-glyph {
+  font-size: 0.76rem;
+  line-height: 1;
+}
+
 .city-results {
   background: rgba(10, 10, 15, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -258,6 +416,11 @@ canvas#visualizer {
 
 .city-result:hover {
   background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.city-result.active {
+  background: rgba(255, 255, 255, 0.12);
   color: var(--text-primary);
 }
 
@@ -337,8 +500,113 @@ canvas#visualizer {
   pointer-events: none;
 }
 
+/* Mute panel */
+.mute-panel {
+  position: fixed;
+  bottom: 5rem;
+  right: 2rem;
+  z-index: 15;
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(10, 10, 15, 0.85);
+  padding: 0.5rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: opacity 0.3s ease;
+}
+
+.mute-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mute-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.mute-btn.muted {
+  color: var(--text-dim);
+  border-color: rgba(255, 255, 255, 0.08);
+  text-decoration: line-through;
+}
+
+/* "What am I hearing" panel */
+.hearing-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  background: rgba(10, 10, 15, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 1.5rem 2rem;
+  min-width: 240px;
+  font-size: 0.8rem;
+  line-height: 2;
+  color: var(--text-secondary);
+  transition: opacity 0.3s ease;
+}
+
+.hearing-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hearing-panel strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hearing-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.8rem;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.2s ease;
+}
+
+.hearing-close:hover {
+  color: var(--text-secondary);
+}
+
 /* ── Mobile layout ── */
 @media (max-width: 600px) {
+  .overlay-content {
+    max-width: 380px;
+    padding: 1.72rem;
+  }
+
+  .brand-chip {
+    margin-bottom: 0.9rem;
+    font-size: 0.55rem;
+    letter-spacing: 0.16em;
+  }
+
+  .overlay-title {
+    font-size: 1.44rem;
+    letter-spacing: 0.045em;
+    line-height: 1.24;
+    margin-bottom: 0.84rem;
+  }
+
+  .overlay-tagline {
+    margin-bottom: 2.02rem;
+  }
+
   /* Stack all three panels vertically, centered above the landscape */
   .controls {
     bottom: 1.5rem;
@@ -346,17 +614,30 @@ canvas#visualizer {
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 1rem;
+    gap: 0.85rem;
     align-items: center;
     white-space: nowrap;
   }
 
   .volume-slider {
-    width: 55px;
+    width: 62px;
+  }
+
+  #pause-btn {
+    font-size: 1.08rem;
+  }
+
+  #menu-btn {
+    min-width: 1.9rem;
+    padding: 0.08rem 0.5rem;
+  }
+
+  .menu-glyph {
+    font-size: 1.04rem;
   }
 
   .info-display {
-    bottom: 4.5rem;
+    bottom: 4.2rem;
     left: 50%;
     transform: translateX(-50%);
     text-align: center;
@@ -364,7 +645,7 @@ canvas#visualizer {
   }
 
   .chord-display {
-    bottom: 9rem;
+    bottom: 10.8rem;
     /* left: 50% + translateX(-50%) already set on desktop — no change */
   }
 
@@ -379,5 +660,88 @@ canvas#visualizer {
 
   .location-search input {
     width: 100%;
+  }
+
+  .current-location-btn {
+    width: 100%;
+  }
+
+  .secondary-menu {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 4rem;
+    width: calc(100vw - 3rem);
+    min-width: 0;
+    z-index: 19;
+  }
+
+  .mute-panel {
+    bottom: 7.5rem;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+/* Smaller phones: give info/chord blocks extra breathing room */
+@media (max-width: 480px) {
+  .info-display {
+    bottom: 4rem;
+    width: calc(100vw - 2.4rem);
+  }
+
+  .chord-display {
+    bottom: 11.6rem;
+  }
+}
+
+/* Narrow phones: tighten text and increase separation further */
+@media (max-width: 390px) {
+  .overlay-content {
+    max-width: 334px;
+    padding: 1.2rem;
+  }
+
+  .brand-chip {
+    font-size: 0.51rem;
+    letter-spacing: 0.14em;
+    margin-bottom: 0.78rem;
+  }
+
+  .overlay-title {
+    font-size: 1.24rem;
+    letter-spacing: 0.036em;
+    line-height: 1.25;
+    margin-bottom: 0.74rem;
+  }
+
+  .overlay-tagline {
+    margin-bottom: 1.86rem;
+  }
+
+  .info-display {
+    bottom: 3.8rem;
+    width: calc(100vw - 2.2rem);
+    font-size: 0.7rem;
+    line-height: 1.65;
+    letter-spacing: 0.06em;
+  }
+
+  .info-location {
+    font-size: 0.8rem;
+  }
+
+  .info-details-sub {
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+  }
+
+  .chord-display {
+    bottom: 12.4rem;
+  }
+
+  .chord-name {
+    font-size: 0.74rem;
   }
 }

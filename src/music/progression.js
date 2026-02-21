@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import {
   getDiatonicChord, getScaleDegreeNote, getScaleNotes,
   getChordTonesForDegree, voiceLead,
-  buildDominant7Chord, getChordTonesFromSemitones, NOTE_NAMES,
+  buildDominant7Chord, getChordTonesFromSemitones, NOTE_NAMES, noteToMidi,
 } from './scale.js';
 import { CATEGORY_TO_MOOD } from './constants.js';
 
@@ -224,6 +224,51 @@ function buildSecondaryDominant(targetChord, originalScaleTones) {
 }
 
 /**
+ * Replace the octave digit in a note name string.
+ * e.g. shiftOctave('E5', 2) → 'E2'
+ */
+function shiftOctave(noteName, targetOctave) {
+  return noteName.replace(/\d+$/, String(targetOctave));
+}
+
+/**
+ * Choose the inversion of a chord that minimizes the bass leap from the
+ * previous chord's bass note. Only considers root, first, and second inversion
+ * (using chord.notes[0], [1], [2] as the candidate bass notes, placed in octave 2).
+ *
+ * Only `bassNote` is changed — pad `notes[]` and `scaleTones[]` are untouched.
+ *
+ * @param {object} chord - Chord object (output of buildChord or buildSecondaryDominant)
+ * @param {string|null} previousBassNote - The bass note from the previous chord
+ * @returns {object} Chord with (potentially updated) bassNote
+ */
+function selectInversion(chord, previousBassNote) {
+  if (!previousBassNote || chord.notes.length < 3) return chord;
+
+  // Three candidates: root position, 1st inversion (3rd in bass), 2nd inversion (5th in bass)
+  const candidates = [
+    chord.bassNote,                          // root position (already in octave 2)
+    shiftOctave(chord.notes[1], 2),          // first inversion
+    shiftOctave(chord.notes[2], 2),          // second inversion
+  ];
+
+  const prevMidi = noteToMidi(previousBassNote);
+  let bestBass = candidates[0];
+  let bestDist = Math.abs(noteToMidi(candidates[0]) - prevMidi);
+
+  for (let i = 1; i < candidates.length; i++) {
+    const dist = Math.abs(noteToMidi(candidates[i]) - prevMidi);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestBass = candidates[i];
+    }
+  }
+
+  if (bestBass === chord.bassNote) return chord; // No change needed
+  return { ...chord, bassNote: bestBass };
+}
+
+/**
  * Build a chord data object for a given scale degree.
  * Used by both the initial generation and the Markov walker.
  *
@@ -313,6 +358,16 @@ export function generateProgression(root, mode, weatherCategory, pressureNorm) {
     finalChords = injected;
   }
 
+  // ── Chord inversions ──
+  // After the full chord list is assembled (including secondary dominants),
+  // pick the inversion for each chord that minimizes the bass leap from the previous.
+  let previousBassNote = null;
+  finalChords = finalChords.map(chord => {
+    const voiced = selectInversion(chord, previousBassNote);
+    previousBassNote = voiced.bassNote;
+    return voiced;
+  });
+
   return {
     chords: finalChords,
     harmonicRhythm,
@@ -351,24 +406,29 @@ export function createProgressionPlayer(callbacks) {
   let chordIndex = 0;
   let chordLoop = null;
 
-  function startLoop() {
+  function stopLoop() {
     if (chordLoop) {
       chordLoop.stop();
       chordLoop.dispose();
+      chordLoop = null;
     }
+  }
+
+  function startLoop({ fireCurrentChord = false } = {}) {
+    stopLoop();
 
     if (!currentProgression) return;
 
-    const { chords, harmonicRhythm } = currentProgression;
+    if (fireCurrentChord) {
+      const chord = currentProgression.chords[chordIndex];
+      callbacks.onChordChange(chord, chordIndex, currentProgression.chords.length);
+    }
 
-    // Fire the first chord immediately
-    callbacks.onChordChange(chords[0], 0, chords.length);
-
-    chordLoop = new Tone.Loop((time) => {
+    chordLoop = new Tone.Loop(() => {
       chordIndex++;
 
       // End of progression?
-      if (chordIndex >= chords.length) {
+      if (chordIndex >= currentProgression.chords.length) {
         if (nextProgression) {
           // Swap in queued progression (weather/key change)
           currentProgression = nextProgression;
@@ -388,10 +448,10 @@ export function createProgressionPlayer(callbacks) {
 
       const chord = currentProgression.chords[chordIndex];
       callbacks.onChordChange(chord, chordIndex, currentProgression.chords.length);
-    }, harmonicRhythm);
+    }, currentProgression.harmonicRhythm);
 
     // Start after the first interval (first chord was already fired)
-    chordLoop.start('+' + harmonicRhythm);
+    chordLoop.start('+' + currentProgression.harmonicRhythm);
   }
 
   return {
@@ -403,8 +463,9 @@ export function createProgressionPlayer(callbacks) {
     setProgression(progression, immediate = false) {
       if (immediate || !currentProgression) {
         currentProgression = progression;
+        nextProgression = null;
         chordIndex = 0;
-        startLoop();
+        startLoop({ fireCurrentChord: true });
       } else {
         nextProgression = progression;
       }
@@ -426,16 +487,22 @@ export function createProgressionPlayer(callbacks) {
      */
     start() {
       if (currentProgression) {
-        startLoop();
+        startLoop({ fireCurrentChord: false });
       }
     },
 
+    /** Pause playback while preserving progression and position. */
+    pause() {
+      stopLoop();
+    },
+
+    /** Alias for start(); explicit name for pause/resume lifecycle. */
+    resume() {
+      this.start();
+    },
+
     stop() {
-      if (chordLoop) {
-        chordLoop.stop();
-        chordLoop.dispose();
-        chordLoop = null;
-      }
+      stopLoop();
       currentProgression = null;
       nextProgression = null;
       chordIndex = 0;
