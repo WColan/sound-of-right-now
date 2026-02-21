@@ -13,9 +13,17 @@ import { createDisplay } from './ui/display.js';
 import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
+import { VERSION } from './version.js';
 
 // Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
 inject();
+
+// Print version to console for quick production build identification
+console.info(`[SONAR] v${VERSION}`);
+
+// Stamp version into the landing overlay badge
+const overlayVersion = document.getElementById('overlay-version');
+if (overlayVersion) overlayVersion.textContent = `v${VERSION}`;
 
 let engine = null;
 let interpolator = null;
@@ -519,6 +527,9 @@ async function boot(latitude, longitude, locationName) {
 
   // Wire chord changes from engine → visualizer
   engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+
+  // Wire lightning flashes from visualizer → engine (thunder transient)
+  visualizer.onLightning(() => engine.triggerThunder());
 
   // Start engine with neutral placeholder params
   const placeholderParams = mapWeatherToMusic({

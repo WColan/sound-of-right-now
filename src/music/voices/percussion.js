@@ -242,6 +242,32 @@ export function createPercussionVoice() {
     },
 
     /**
+     * Thunder transient — triggered by lightning flash in the visualizer.
+     *
+     * Two-hit structure mirrors real thunder acoustics: a sharp initial crack
+     * (the direct sound wave) followed by a lower, longer rumble (reflections).
+     * Pitch is randomised slightly so each strike sounds distinct.
+     */
+    triggerThunder() {
+      const now = Tone.now();
+      // Primary crack — loud, high-pitched, short
+      membrane.triggerAttackRelease(
+        38 + Math.random() * 12,
+        '4n',
+        now + 0.005,
+        0.65 + Math.random() * 0.25
+      );
+      // Secondary rumble — quieter, lower, longer decay
+      const rumbleDelay = 0.08 + Math.random() * 0.12;
+      membrane.triggerAttackRelease(
+        28 + Math.random() * 8,
+        '2n',
+        now + rumbleDelay,
+        0.28 + Math.random() * 0.15
+      );
+    },
+
+    /**
      * Set density — now scales velocities rather than controlling probability.
      * @param {number} value 0-1
      */
