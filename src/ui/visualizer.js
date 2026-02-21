@@ -182,16 +182,55 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
    * session so the band looks stable, but regenerated on resize.
    */
   function generateMilkyWayStars() {
-    const bandW = width * 1.6;
-    const bandH = height * 0.22;
-    milkyWayStars = Array.from({ length: 300 }, () => ({
-      x: (Math.random() - 0.5) * bandW,
-      y: (Math.random() - 0.5) * bandH * 0.8,
-      size: Math.random() < 0.85 ? 0.3 + Math.random() * 0.5 : 0.7 + Math.random() * 0.8,
-      brightness: 0.3 + Math.random() * 0.7,
-      twinkleSpeed: 0.002 + Math.random() * 0.008,
-      phase: Math.random() * Math.PI * 2,
-    }));
+    const bandW = width * 1.65;
+    const halfH = height * 0.11; // half-height of the full band
+
+    // Box-Muller transform — produces a Gaussian distributed value
+    function gaussian(mean, sigma) {
+      const u = 1 - Math.random();
+      const v = Math.random();
+      return mean + sigma * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    // Star colour palette: mostly blue-white, occasional warm tints
+    const COLOURS = [
+      [240, 238, 255], // blue-white (dominant)
+      [240, 238, 255],
+      [240, 238, 255],
+      [245, 240, 255], // slight purple
+      [255, 248, 240], // warm white
+      [200, 220, 255], // cool blue
+      [255, 240, 210], // gold tint (rare giant)
+    ];
+
+    milkyWayStars = Array.from({ length: 1400 }, () => {
+      // Gaussian Y — naturally denser in the centre, thinning to edges
+      const y = gaussian(0, halfH * 0.38);
+      // Uniform X across the full band width
+      const x = (Math.random() - 0.5) * bandW;
+
+      // Stars near centre are slightly brighter on average
+      const centrality = Math.max(0, 1 - Math.abs(y) / halfH);
+      const brightness = 0.15 + Math.random() * 0.65 + centrality * 0.2;
+
+      // Tiny pinpoints dominate; occasional slightly larger ones
+      const roll = Math.random();
+      const size = roll < 0.72 ? 0.25 + Math.random() * 0.35
+                 : roll < 0.93 ? 0.55 + Math.random() * 0.45
+                 :                0.9  + Math.random() * 0.6;
+
+      const col = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+
+      return {
+        x,
+        y: Math.max(-halfH, Math.min(halfH, y)), // clamp outliers
+        size,
+        brightness,
+        r: col[0], g: col[1], b: col[2],
+        twinkleSpeed: 0.001 + Math.random() * 0.006,
+        phase: Math.random() * Math.PI * 2,
+      };
+    });
   }
 
   function generateClouds() {
@@ -362,7 +401,6 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     const intensity = state.milkyWayIntensity ?? 0;
     if (intensity <= 0.01) return;
 
-    const baseAlpha = intensity * 0.55; // max composite opacity
     const cx = width * 0.5;
     const cy = height * 0.32; // vertical centre of band in sky
     const angle = Math.PI * 0.16; // ~29° from horizontal
@@ -371,51 +409,57 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     ctx.translate(cx, cy);
     ctx.rotate(angle);
 
-    const bandW = width * 1.65;   // length — wider than canvas to fill diagonal
-    const bandH = height * 0.22;  // full height of the band
+    const bandW = width * 1.65;
+    const halfH = height * 0.11;
 
-    // Layer 1 — outer diffuse glow
-    const glowGrad = ctx.createLinearGradient(0, -bandH, 0, bandH);
-    glowGrad.addColorStop(0,    `rgba(140, 155, 210, 0)`);
-    glowGrad.addColorStop(0.25, `rgba(155, 170, 220, ${baseAlpha * 0.30})`);
-    glowGrad.addColorStop(0.5,  `rgba(190, 200, 230, ${baseAlpha * 0.48})`);
-    glowGrad.addColorStop(0.75, `rgba(155, 170, 220, ${baseAlpha * 0.30})`);
-    glowGrad.addColorStop(1,    `rgba(140, 155, 210, 0)`);
-    ctx.fillStyle = glowGrad;
-    ctx.fillRect(-bandW / 2, -bandH, bandW, bandH * 2);
-
-    // Layer 2 — bright core
-    const coreH = bandH * 0.38;
-    const coreGrad = ctx.createLinearGradient(0, -coreH, 0, coreH);
-    coreGrad.addColorStop(0,   `rgba(215, 210, 240, 0)`);
-    coreGrad.addColorStop(0.3, `rgba(232, 225, 248, ${baseAlpha * 0.62})`);
-    coreGrad.addColorStop(0.5, `rgba(248, 244, 255, ${baseAlpha * 0.78})`);
-    coreGrad.addColorStop(0.7, `rgba(232, 225, 248, ${baseAlpha * 0.62})`);
-    coreGrad.addColorStop(1,   `rgba(215, 210, 240, 0)`);
-    ctx.fillStyle = coreGrad;
-    ctx.fillRect(-bandW / 2, -coreH, bandW, coreH * 2);
-
-    // Layer 3 — dust lane (the Great Rift — dark interstellar dust slightly off-centre)
-    const dustOff = coreH * 0.18;
-    const dustH   = coreH * 0.32;
-    const dustGrad = ctx.createLinearGradient(0, dustOff - dustH, 0, dustOff + dustH);
-    dustGrad.addColorStop(0,   `rgba(0, 0, 8, 0)`);
-    dustGrad.addColorStop(0.35, `rgba(0, 0, 8, ${baseAlpha * 0.22})`);
-    dustGrad.addColorStop(0.65, `rgba(0, 0, 8, ${baseAlpha * 0.22})`);
-    dustGrad.addColorStop(1,   `rgba(0, 0, 8, 0)`);
-    ctx.fillStyle = dustGrad;
-    ctx.fillRect(-bandW / 2, dustOff - dustH, bandW, dustH * 2);
-
-    // Layer 4 — micro-star density scatter
-    for (const mstar of milkyWayStars) {
-      const twinkle = 0.55 + Math.sin(time * mstar.twinkleSpeed + mstar.phase) * 0.45;
-      const a = baseAlpha * twinkle * mstar.brightness;
-      if (a < 0.01) continue;
+    // ── Layer 1: a few very soft radial blobs to suggest nebula core brightness
+    // These are large, extremely faint circles — they add a subtle luminosity
+    // gradient without creating a visible rectangular beam.
+    const nebulaBlobs = [
+      { x: 0,           y: 0,         r: halfH * 1.8, a: 0.055 },
+      { x: -bandW * 0.2, y: halfH * 0.1, r: halfH * 1.2, a: 0.04 },
+      { x:  bandW * 0.2, y: -halfH * 0.05, r: halfH * 1.4, a: 0.04 },
+      { x: -bandW * 0.05, y: halfH * 0.05, r: halfH * 0.7, a: 0.05 },
+    ];
+    for (const blob of nebulaBlobs) {
+      const grad = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.r);
+      grad.addColorStop(0,   `rgba(170, 185, 230, ${intensity * blob.a})`);
+      grad.addColorStop(0.5, `rgba(155, 170, 215, ${intensity * blob.a * 0.5})`);
+      grad.addColorStop(1,   `rgba(140, 155, 210, 0)`);
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(mstar.x, mstar.y, mstar.size, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(240, 238, 255, ${a})`;
+      ctx.ellipse(blob.x, blob.y, blob.r, blob.r * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // ── Layer 2: star density scatter — the primary visual
+    // Stars are pre-generated with Gaussian Y distribution so they naturally
+    // cluster in the centre and thin out at edges. No gradient rectangles.
+    for (const mstar of milkyWayStars) {
+      const twinkle = 0.6 + Math.sin(time * mstar.twinkleSpeed + mstar.phase) * 0.4;
+      const a = intensity * twinkle * mstar.brightness;
+      if (a < 0.015) continue;
+      ctx.beginPath();
+      ctx.arc(mstar.x, mstar.y, mstar.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${mstar.r}, ${mstar.g}, ${mstar.b}, ${Math.min(1, a)})`;
+      ctx.fill();
+    }
+
+    // ── Layer 3: dust lane — sparse dark dots slightly off-centre
+    // A cluster of near-black tiny dots along the Great Rift axis creates
+    // the sense of obscured stars without a solid filled rectangle.
+    ctx.globalAlpha = intensity * 0.18;
+    ctx.fillStyle = 'rgba(0, 0, 6, 0.9)';
+    for (let i = 0; i < milkyWayStars.length * 0.12; i++) {
+      const star = milkyWayStars[i];
+      // Only paint dust dots near the centre where the rift would be
+      if (Math.abs(star.y) > halfH * 0.28) continue;
+      const dustY = star.y * 0.4 + halfH * 0.12; // shift slightly off-centre
+      ctx.beginPath();
+      ctx.arc(star.x, dustY, star.size * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
     ctx.restore();
   }
