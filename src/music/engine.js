@@ -189,10 +189,26 @@ export function createSoundEngine() {
   // fatsine pads have energy down to ~60 Hz; this creates headroom for the bass.
   const padHPF = new Tone.Filter({ frequency: 90, type: 'highpass', rolloff: -12 });
 
+  // ── Milky Way shimmer — Tremolo on pad ──
+  // Inactive by default (wet: 0). Fades in on clear, dark, moonless nights.
+  // Slow amplitude modulation (0.8–2 Hz) creates a breathing, ethereal quality
+  // on the harmonic pad that only exists under astronomical viewing conditions.
+  const milkyWayTremolo = new Tone.Tremolo({ frequency: 1.2, depth: 0, wet: 0 }).start();
+
+  // ── Shooting star synth — single-use ding ──
+  // A tiny bell-like tone fired once per meteor streak. Routes through the main
+  // reverb so it shares the room with the rest of the audio environment.
+  const shootingStarSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 0.8, sustain: 0, release: 1.2 },
+    volume: -28,
+  }).connect(reverb);
+
   // Connect voices -> spatial nodes -> wideners/chorus bus
   pad.output.connect(padHPF);
   padHPF.connect(padPanner.node);
-  padPanner.node.connect(chorus);
+  padPanner.node.connect(milkyWayTremolo);
+  milkyWayTremolo.connect(chorus);
 
   arpeggio.output.connect(arpeggioPanner.node);
   arpeggioPanner.node.connect(arpeggioWidener);
@@ -440,6 +456,35 @@ export function createSoundEngine() {
      */
     triggerThunder() {
       percussion.triggerThunder();
+    },
+
+    /**
+     * Ramp the Milky Way shimmer effect in/out based on astronomical conditions.
+     * Called from main.js on each weather update with a 0-1 composite intensity.
+     *
+     * At full intensity the pad gains a slow tremolo (breathing amplitude modulation)
+     * and the chorus wet is nudged upward, adding an ethereal shimmering quality.
+     * At zero the tremolo is fully bypassed (wet: 0) with no audible effect.
+     *
+     * @param {number} intensity - 0 (no effect) to 1 (full shimmer)
+     */
+    updateMilkyWayShimmer(intensity) {
+      const i = Math.max(0, Math.min(1, intensity));
+      milkyWayTremolo.depth.rampTo(i * 0.35, 8);
+      milkyWayTremolo.wet.rampTo(i > 0.05 ? i * 0.7 : 0, 8);
+      milkyWayTremolo.frequency.rampTo(0.8 + i * 1.2, 12); // 0.8–2 Hz
+      // Gentle chorus boost on top of the weather baseline
+      chorus.wet.rampTo(Math.min(0.55, 0.2 + i * 0.12), 10);
+    },
+
+    /**
+     * Trigger a single soft bell-like ding — called when a shooting star spawns.
+     * Note is chosen randomly from a pentatonic set in the upper register.
+     */
+    triggerShootingStar() {
+      const pitches = ['B5', 'C#6', 'E6', 'F#6', 'A6', 'B6'];
+      const note = pitches[Math.floor(Math.random() * pitches.length)];
+      shootingStarSynth.triggerAttackRelease(note, '8n', Tone.now() + 0.005);
     },
 
     /**
@@ -883,6 +928,9 @@ export function createSoundEngine() {
       padHPF.dispose();
       arpeggioWidener.dispose();
       melodyWidener.dispose();
+      // Milky Way effects
+      milkyWayTremolo.dispose();
+      shootingStarSynth.dispose();
     },
   };
 }

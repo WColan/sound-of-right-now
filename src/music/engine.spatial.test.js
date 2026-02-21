@@ -86,6 +86,27 @@ vi.mock('tone', () => {
   class Limiter extends AudioNode {}
   class Analyser extends AudioNode {}
 
+  class Tremolo extends AudioNode {
+    constructor() {
+      super();
+      this.frequency = new Param(1.2);
+      this.depth = new Param(0);
+      this.wet = new Param(0);
+    }
+
+    start() { return this; }
+  }
+
+  class Synth extends AudioNode {
+    constructor() {
+      super();
+      this.volume = new Param(0);
+    }
+
+    triggerAttackRelease() {}
+    dispose() {}
+  }
+
   class Panner extends AudioNode {
     constructor(value = 0) {
       super();
@@ -136,6 +157,8 @@ vi.mock('tone', () => {
     Chebyshev,
     Limiter,
     Analyser,
+    Tremolo,
+    Synth,
     Panner,
     Panner3D,
     StereoWidener,

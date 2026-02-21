@@ -79,6 +79,8 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     sunset: null,
     moonrise: null,
     moonset: null,
+    // Milky Way + shooting star intensity (0-1, computed in main.js)
+    milkyWayIntensity: 0,
   };
 
   // Particles
@@ -91,6 +93,14 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   let lightningAlpha = 0;
   let lightningTimer = null;
   let lightningCallback = null; // Registered via onLightning(fn)
+
+  // Milky Way star density layer
+  let milkyWayStars = [];
+
+  // Shooting stars state
+  let shootingStars = [];
+  let shootingStarTimer = null;
+  let shootingStarCallback = null; // Registered via onShootingStar(fn)
 
   // Clouds
   let clouds = [];
@@ -135,6 +145,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
 
     generateLandscape();
     generateStars();
+    generateMilkyWayStars();
     generateClouds();
   }
 
@@ -163,6 +174,24 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         phase: Math.random() * Math.PI * 2,
       });
     }
+  }
+
+  /**
+   * Generate micro-stars scattered within the Milky Way band's local coordinate
+   * space (centred on the band, before canvas rotation is applied). Fixed per
+   * session so the band looks stable, but regenerated on resize.
+   */
+  function generateMilkyWayStars() {
+    const bandW = width * 1.6;
+    const bandH = height * 0.22;
+    milkyWayStars = Array.from({ length: 300 }, () => ({
+      x: (Math.random() - 0.5) * bandW,
+      y: (Math.random() - 0.5) * bandH * 0.8,
+      size: Math.random() < 0.85 ? 0.3 + Math.random() * 0.5 : 0.7 + Math.random() * 0.8,
+      brightness: 0.3 + Math.random() * 0.7,
+      twinkleSpeed: 0.002 + Math.random() * 0.008,
+      phase: Math.random() * Math.PI * 2,
+    }));
   }
 
   function generateClouds() {
@@ -309,6 +338,180 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       ctx.beginPath();
       ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255, 255, 240, ${alpha})`;
+      ctx.fill();
+    }
+  }
+
+  // ── Milky Way ──
+
+  /**
+   * Draw the Milky Way as a diagonal diffuse band across the upper sky.
+   *
+   * Visible only on clear, dark, moonless nights (same conditions that gate the
+   * audio shimmer). Built from three layered gradient passes rendered in the
+   * band's local coordinate space (canvas rotation trick), plus a scatter of
+   * pre-generated micro-stars for stellar density texture.
+   *
+   * Layers (back to front):
+   *  1. Outer diffuse glow — wide, very transparent cool blue-white
+   *  2. Core band — narrower, brighter, warm near-white
+   *  3. Dust lane — semi-transparent dark rift slightly off-centre
+   *  4. Micro-star density dots — independently twinkling
+   */
+  function drawMilkyWay() {
+    const intensity = state.milkyWayIntensity ?? 0;
+    if (intensity <= 0.01) return;
+
+    const baseAlpha = intensity * 0.55; // max composite opacity
+    const cx = width * 0.5;
+    const cy = height * 0.32; // vertical centre of band in sky
+    const angle = Math.PI * 0.16; // ~29° from horizontal
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
+    const bandW = width * 1.65;   // length — wider than canvas to fill diagonal
+    const bandH = height * 0.22;  // full height of the band
+
+    // Layer 1 — outer diffuse glow
+    const glowGrad = ctx.createLinearGradient(0, -bandH, 0, bandH);
+    glowGrad.addColorStop(0,    `rgba(140, 155, 210, 0)`);
+    glowGrad.addColorStop(0.25, `rgba(155, 170, 220, ${baseAlpha * 0.30})`);
+    glowGrad.addColorStop(0.5,  `rgba(190, 200, 230, ${baseAlpha * 0.48})`);
+    glowGrad.addColorStop(0.75, `rgba(155, 170, 220, ${baseAlpha * 0.30})`);
+    glowGrad.addColorStop(1,    `rgba(140, 155, 210, 0)`);
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(-bandW / 2, -bandH, bandW, bandH * 2);
+
+    // Layer 2 — bright core
+    const coreH = bandH * 0.38;
+    const coreGrad = ctx.createLinearGradient(0, -coreH, 0, coreH);
+    coreGrad.addColorStop(0,   `rgba(215, 210, 240, 0)`);
+    coreGrad.addColorStop(0.3, `rgba(232, 225, 248, ${baseAlpha * 0.62})`);
+    coreGrad.addColorStop(0.5, `rgba(248, 244, 255, ${baseAlpha * 0.78})`);
+    coreGrad.addColorStop(0.7, `rgba(232, 225, 248, ${baseAlpha * 0.62})`);
+    coreGrad.addColorStop(1,   `rgba(215, 210, 240, 0)`);
+    ctx.fillStyle = coreGrad;
+    ctx.fillRect(-bandW / 2, -coreH, bandW, coreH * 2);
+
+    // Layer 3 — dust lane (the Great Rift — dark interstellar dust slightly off-centre)
+    const dustOff = coreH * 0.18;
+    const dustH   = coreH * 0.32;
+    const dustGrad = ctx.createLinearGradient(0, dustOff - dustH, 0, dustOff + dustH);
+    dustGrad.addColorStop(0,   `rgba(0, 0, 8, 0)`);
+    dustGrad.addColorStop(0.35, `rgba(0, 0, 8, ${baseAlpha * 0.22})`);
+    dustGrad.addColorStop(0.65, `rgba(0, 0, 8, ${baseAlpha * 0.22})`);
+    dustGrad.addColorStop(1,   `rgba(0, 0, 8, 0)`);
+    ctx.fillStyle = dustGrad;
+    ctx.fillRect(-bandW / 2, dustOff - dustH, bandW, dustH * 2);
+
+    // Layer 4 — micro-star density scatter
+    for (const mstar of milkyWayStars) {
+      const twinkle = 0.55 + Math.sin(time * mstar.twinkleSpeed + mstar.phase) * 0.45;
+      const a = baseAlpha * twinkle * mstar.brightness;
+      if (a < 0.01) continue;
+      ctx.beginPath();
+      ctx.arc(mstar.x, mstar.y, mstar.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(240, 238, 255, ${a})`;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ── Shooting Stars ──
+
+  /**
+   * Returns the next shooting star interval in ms.
+   * At full intensity (1.0): 45–120 seconds.
+   * At partial intensity the interval stretches inversely — rarer in faint skies.
+   */
+  function getShootingStarInterval() {
+    const base = 45000 + Math.random() * 75000;
+    return base / Math.max(0.15, state.milkyWayIntensity ?? 0);
+  }
+
+  /**
+   * Spawn a single meteor streak and notify the audio callback.
+   * The streak runs diagonally (mostly left-to-right, rarely right-to-left).
+   */
+  function spawnShootingStar() {
+    const goLeft = Math.random() < 0.25; // 25% chance of leftward streak
+    const speedBase = 5 + Math.random() * 4;
+    const angle = (goLeft ? Math.PI - 0.2 : 0.2) + (Math.random() - 0.5) * 0.35;
+
+    shootingStars.push({
+      x:     Math.random() * width,
+      y:     Math.random() * height * 0.42, // upper 42% of sky
+      dx:    Math.cos(angle) * speedBase,
+      dy:    Math.sin(angle) * speedBase,
+      trail: 90 + Math.random() * 110,     // trail length in px
+      life:  1.0,                           // fades 1 → 0
+      decay: 0.022 + Math.random() * 0.018, // per-frame fade rate
+    });
+
+    // Fire audio ding immediately when the streak begins
+    if (shootingStarCallback) shootingStarCallback();
+  }
+
+  function scheduleShootingStar() {
+    if ((state.milkyWayIntensity ?? 0) <= 0.1) return;
+    shootingStarTimer = setTimeout(() => {
+      if ((state.milkyWayIntensity ?? 0) > 0.1) {
+        spawnShootingStar();
+        scheduleShootingStar(); // recursive — schedule next one
+      }
+    }, getShootingStarInterval());
+  }
+
+  function stopShootingStars() {
+    if (shootingStarTimer) {
+      clearTimeout(shootingStarTimer);
+      shootingStarTimer = null;
+    }
+    shootingStars = [];
+  }
+
+  /**
+   * Draw all active shooting stars and advance their animation state.
+   * Each star is a gradient-stroked line: transparent tail → bright tip.
+   */
+  function drawShootingStars() {
+    if (shootingStars.length === 0) return;
+    const intensity = state.milkyWayIntensity ?? 0;
+
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+      const s = shootingStars[i];
+      s.x    += s.dx;
+      s.y    += s.dy;
+      s.life -= s.decay;
+
+      if (s.life <= 0) { shootingStars.splice(i, 1); continue; }
+
+      // Alpha scales with life and sky darkness — fainter in dim conditions
+      const alpha = s.life * (intensity * 0.8 + 0.2);
+
+      // Tail starts behind the tip by `trail` pixels
+      const tailX = s.x - s.dx * (s.trail / Math.hypot(s.dx, s.dy));
+      const tailY = s.y - s.dy * (s.trail / Math.hypot(s.dx, s.dy));
+
+      const grad = ctx.createLinearGradient(tailX, tailY, s.x, s.y);
+      grad.addColorStop(0,   `rgba(255, 255, 255, 0)`);
+      grad.addColorStop(0.5, `rgba(220, 230, 255, ${alpha * 0.35})`);
+      grad.addColorStop(1,   `rgba(255, 255, 255, ${alpha})`);
+
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(s.x, s.y);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Bright tip dot
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
       ctx.fill();
     }
   }
@@ -962,6 +1165,8 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     // Full redraw
     drawSky();
     drawStars(fftData);
+    drawMilkyWay();      // Galactic band — behind celestial bodies and clouds
+    drawShootingStars(); // Meteor streaks — same dark-sky conditions
     drawSun();
     drawMoon();
     drawAurora();
@@ -1035,6 +1240,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
      */
     updateState(newState) {
       const prevCategory = state.weatherCategory;
+      const prevMilkyWayIntensity = state.milkyWayIntensity ?? 0;
       Object.assign(state, newState);
 
       // Start/stop lightning based on storm state
@@ -1043,6 +1249,16 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
           scheduleLightning();
         } else if (newState.weatherCategory !== 'storm' && prevCategory === 'storm') {
           stopLightning();
+        }
+      }
+
+      // Start/stop shooting star scheduling based on Milky Way visibility
+      if (newState.milkyWayIntensity !== undefined) {
+        const intensity = newState.milkyWayIntensity;
+        if (intensity > 0.1 && prevMilkyWayIntensity <= 0.1) {
+          scheduleShootingStar(); // conditions became favourable
+        } else if (intensity <= 0.1 && prevMilkyWayIntensity > 0.1) {
+          stopShootingStars();    // sky no longer dark/clear enough
         }
       }
 
@@ -1065,6 +1281,15 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     },
 
     /**
+     * Register a callback to fire when a shooting star spawns.
+     * Used to trigger a soft audio ding in sync with the visual streak.
+     * @param {Function} fn - Called with no arguments on each meteor
+     */
+    onShootingStar(fn) {
+      shootingStarCallback = fn;
+    },
+
+    /**
      * Called by engine on chord change — updates chord name display + timeline.
      */
     onChordChange(chordInfo) {
@@ -1076,6 +1301,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       window.removeEventListener('resize', resize);
       clearTimeout(chordFadeTimer);
       stopLightning();
+      stopShootingStars();
     },
   };
 }

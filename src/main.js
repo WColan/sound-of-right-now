@@ -94,6 +94,17 @@ function onWeatherUpdate(weather) {
   const moonrise = getMoonriseTime(now, weather.sunrise, weather.sunset);
   const moonset  = getMoonsetTime(now, weather.sunrise, weather.sunset);
 
+  // ── Milky Way shimmer intensity ──
+  // Composite 0-1 value from three conditions that gate both the visual band
+  // and the audio shimmer — dark night, clear sky, dim moon.
+  //  padBrightness < 0.35 ≈ night/deep-dusk (it tracks time-of-day closely)
+  //  moonFullness  < 0.4  ≈ crescent/new moon (bright moon washes the Milky Way out)
+  const mwBrightnessAlpha = Math.max(0, (0.35 - musicalParams.padBrightness) / 0.35);
+  const mwMoonAlpha       = Math.max(0, (0.4 - (musicalParams._meta.moonFullness ?? 0)) / 0.4);
+  const milkyWayIntensity = musicalParams._meta.category === 'clear'
+    ? Math.min(mwBrightnessAlpha, mwMoonAlpha)
+    : 0;
+
   // Update melody's golden-hour / full-moon probability boosts
   if (engine) {
     engine.updateCelestialContext(
@@ -111,6 +122,13 @@ function onWeatherUpdate(weather) {
 
     // Update wind chime strike frequency from current wind speed
     engine.updateWindChime(weather.windSpeed);
+
+    // ── Milky Way shimmer ──
+    // Composite intensity (0-1) from three gating conditions:
+    //  1. Dark night  — padBrightness proxy (< 0.35 ≈ night/deep-dusk)
+    //  2. Clear sky   — category must be 'clear'
+    //  3. Dim moon    — moonFullness < 0.4 (bright moon washes it out)
+    engine.updateMilkyWayShimmer(milkyWayIntensity);
   }
 
   visualizer.updateState({
@@ -133,6 +151,8 @@ function onWeatherUpdate(weather) {
     sunset: weather.sunset,
     moonrise,
     moonset,
+    // Milky Way + shooting star gating intensity (0-1)
+    milkyWayIntensity,
   });
 
   // ── Detailed logging: data inputs → sound mappings ──
@@ -530,6 +550,9 @@ async function boot(latitude, longitude, locationName) {
 
   // Wire lightning flashes from visualizer → engine (thunder transient)
   visualizer.onLightning(() => engine.triggerThunder());
+
+  // Wire shooting star spawns from visualizer → engine (soft bell ding)
+  visualizer.onShootingStar(() => engine.triggerShootingStar());
 
   // Start engine with neutral placeholder params
   const placeholderParams = mapWeatherToMusic({
