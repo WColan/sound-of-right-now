@@ -367,10 +367,13 @@ function init() {
       display = createDisplay(); // Temp display for loading message
       display.setLocation('Finding your location...');
 
-      // Check for permalink ?lat=&lng= params — shared link takes priority
+      // Check for permalink ?lat=&lng= params — shared link takes priority.
+      // Clear params immediately so a subsequent page reload uses geolocation
+      // instead of re-loading the same shared coordinates.
       const urlParams = new URLSearchParams(window.location.search);
       const urlLat = parseFloat(urlParams.get('lat'));
       const urlLng = parseFloat(urlParams.get('lng'));
+      history.replaceState(null, '', window.location.pathname);
 
       if (!isNaN(urlLat) && !isNaN(urlLng)) {
         await boot(urlLat, urlLng, null);
