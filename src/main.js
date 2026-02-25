@@ -98,13 +98,12 @@ function onWeatherUpdate(weather) {
   // Composite 0-1 value from three conditions that gate both the visual band
   // and the audio shimmer — dark night, clear sky, dim moon.
   //  padBrightness < 0.35 ≈ night/deep-dusk (it tracks time-of-day closely)
-  //  moonFullness  < 0.4  ≈ crescent/new moon (bright moon washes the Milky Way out)
+  //  moonFullness  < 0.55 ≈ up to half-moon; a crescent (0.37) gives ~33% intensity
   const mwBrightnessAlpha = Math.max(0, (0.35 - musicalParams.padBrightness) / 0.35);
-  const mwMoonAlpha       = Math.max(0, (0.4 - (musicalParams._meta.moonFullness ?? 0)) / 0.4);
+  const mwMoonAlpha       = Math.max(0, (0.55 - (musicalParams._meta.moonFullness ?? 0)) / 0.55);
   const milkyWayIntensity = musicalParams._meta.category === 'clear'
     ? Math.min(mwBrightnessAlpha, mwMoonAlpha)
     : 0;
-
   // Update melody's golden-hour / full-moon probability boosts
   if (engine) {
     engine.updateCelestialContext(
@@ -327,12 +326,13 @@ async function boot(latitude, longitude, locationName) {
   // Wire master volume slider
   const volSlider = document.getElementById('volume-slider');
   if (volSlider) {
-    // Restore persisted value
-    const savedPercent = Number(localStorage.getItem('masterVolume'));
+    // Restore persisted value — guard against Number(null) === 0 footgun
+    const savedItem = localStorage.getItem('masterVolume');
+    const savedPercent = savedItem !== null ? Number(savedItem) : NaN;
     const safePercent = Number.isFinite(savedPercent) ? Math.max(0, Math.min(100, savedPercent)) : 80;
     volSlider.value = safePercent;
     userVolumeScale = safePercent / 100;
-    engine.setUserGainScale(userVolumeScale, 0);
+    // Don't set engine gain yet — fade-in happens after engine.start() below
 
     volSlider.addEventListener('input', () => {
       userVolumeScale = volSlider.value / 100;
@@ -562,8 +562,12 @@ async function boot(latitude, longitude, locationName) {
     sunset: new Date(new Date().setHours(17, 30)),
     uvIndex: 0,
   });
+  // Begin silent so the first sound the user hears is a gentle swell, not a hard cut-in
+  engine.setUserGainScale(0, 0);
   engine.start(placeholderParams);
   interpolator.update(placeholderParams);
+  // Fade up to the user's saved volume over 3 seconds
+  engine.setUserGainScale(userVolumeScale, 3);
 
   // Fade out overlay, show controls
   showPrimaryControls({
