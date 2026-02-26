@@ -197,7 +197,7 @@ function onWeatherUpdate(weather) {
 /**
  * Set up data fetching for a given location.
  */
-async function startForLocation(latitude, longitude, locationName) {
+async function startForLocation(latitude, longitude, locationName, { fadeIn = false } = {}) {
   const requestId = ++currentLocationRequestId;
   display.setLocation(locationName || 'Loading...');
 
@@ -218,7 +218,9 @@ async function startForLocation(latitude, longitude, locationName) {
     engine = createSoundEngine();
     engine.start({ bpm: 72 });
     engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
-    engine.setUserGainScale(userVolumeScale, 0);
+    // First load: start silent and swell up; location changes: cut in immediately
+    engine.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
+    if (fadeIn) engine.setUserGainScale(userVolumeScale, 3);
     engine.setSleepGainScale(1, 0);
     // Recreate interpolator too — it closes over the old (now-disposed) engine
     interpolator = createInterpolator(engine);
@@ -562,12 +564,8 @@ async function boot(latitude, longitude, locationName) {
     sunset: new Date(new Date().setHours(17, 30)),
     uvIndex: 0,
   });
-  // Begin silent so the first sound the user hears is a gentle swell, not a hard cut-in
-  engine.setUserGainScale(0, 0);
   engine.start(placeholderParams);
   interpolator.update(placeholderParams);
-  // Fade up to the user's saved volume over 3 seconds
-  engine.setUserGainScale(userVolumeScale, 3);
 
   // Fade out overlay, show controls
   showPrimaryControls({
@@ -578,8 +576,8 @@ async function boot(latitude, longitude, locationName) {
     delayMs: 1000,
   });
 
-  // Connect to real weather data
-  await startForLocation(latitude, longitude, locationName);
+  // Connect to real weather data — fade in on first load so audio swells in gently
+  await startForLocation(latitude, longitude, locationName, { fadeIn: true });
 }
 
 /**
