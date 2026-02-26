@@ -77,6 +77,7 @@ export async function fetchWeather(latitude, longitude) {
       sunrise: localStringToDate(daily.sunrise[0]),
       sunset: localStringToDate(daily.sunset[0]),
       uvIndex,
+      elevation: data.elevation ?? 0,
     };
   } catch (err) {
     console.error('Weather fetch failed:', err);

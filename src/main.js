@@ -13,6 +13,7 @@ import { createDisplay } from './ui/display.js';
 import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
+import { classifyBiome } from './weather/biome.js';
 import { VERSION } from './version.js';
 
 // Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
@@ -36,6 +37,7 @@ let currentTideData = null;
 let currentAqiData = null;
 let currentLatitude = null;
 let currentLongitude = null;
+let currentBiome = 'grassland';
 let isPlaying = true; // Track play/pause state for the pause button
 let currentLocationRequestId = 0;
 let userVolumeScale = 0.8;
@@ -57,6 +59,18 @@ function getPressureTrend(pressureHpa) {
   if (pressureHistory.length < 2) return 0;
   const delta = pressureHistory.at(-1).value - pressureHistory[0].value;
   return Math.max(-1, Math.min(1, delta / 5)); // Normalize: ±5 hPa = ±1.0
+}
+
+/**
+ * Compute aurora intensity for high-latitude locations.
+ * Returns 0-1: product of latitude factor, darkness factor, and sky clarity.
+ * Aurora is only visible above 55° latitude, in dark conditions, with clear skies.
+ */
+function computeAuroraIntensity(lat, brightness, cloudCover) {
+  const latFactor = Math.max(0, Math.min(1, (Math.abs(lat) - 55) / 15));
+  const darkFactor = Math.max(0, Math.min(1, (0.2 - brightness) / 0.2));
+  const clearFactor = Math.max(0, Math.min(1, (30 - cloudCover) / 30));
+  return latFactor * darkFactor * clearFactor;
 }
 
 // Clean up on HMR to prevent duplicate audio contexts
@@ -84,6 +98,7 @@ function onWeatherUpdate(weather) {
     aqiLevel: currentAqiData?.aqi ?? null,
     latitude: currentLatitude ?? 40,
     pressureTrend,
+    biome: currentBiome,
   });
 
   interpolator.update(musicalParams);
@@ -104,6 +119,11 @@ function onWeatherUpdate(weather) {
   const milkyWayIntensity = musicalParams._meta.category === 'clear'
     ? Math.min(mwBrightnessAlpha, mwMoonAlpha)
     : 0;
+  // ── Aurora intensity — computed outside engine guard for visualizer use too ──
+  const auroraIntensity = computeAuroraIntensity(
+    currentLatitude ?? 0, musicalParams.padBrightness, weather.cloudCover ?? 0
+  );
+
   // Update melody's golden-hour / full-moon probability boosts
   if (engine) {
     engine.updateCelestialContext(
@@ -121,6 +141,9 @@ function onWeatherUpdate(weather) {
 
     // Update wind chime strike frequency from current wind speed
     engine.updateWindChime(weather.windSpeed);
+
+    // ── Aurora shimmer — boost choir formant resonance during northern lights ──
+    engine.updateAuroraShimmer(auroraIntensity);
 
     // ── Milky Way shimmer ──
     // Composite intensity (0-1) from three gating conditions:
@@ -152,6 +175,12 @@ function onWeatherUpdate(weather) {
     moonset,
     // Milky Way + shooting star gating intensity (0-1)
     milkyWayIntensity,
+    // Biome + elevation + terrain seed for terrain silhouette (Feature 1/5)
+    biome: currentBiome,
+    elevation: weather.elevation ?? 0,
+    terrainSeed: Math.abs(Math.sin(currentLatitude * 1000 + currentLongitude * 1000)) * 10000,
+    // Aurora intensity for northern lights (Feature 4)
+    auroraIntensity,
   });
 
   // ── Detailed logging: data inputs → sound mappings ──
@@ -236,6 +265,12 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
   if (aqiFetcher) { aqiFetcher.stop(); aqiFetcher = null; }
   currentTideData = null;
   currentAqiData = null;
+
+  // Classify biome for this location (fire-and-forget; result used on next weather update)
+  currentBiome = 'grassland'; // Reset to default while classifying
+  classifyBiome(latitude, longitude, { elevation: 0 })
+    .then(b => { if (requestId === currentLocationRequestId) currentBiome = b; })
+    .catch(() => { /* Biome classification failed — grassland fallback is fine */ });
 
   // Set up weather fetching
   const nextWeatherFetcher = createWeatherFetcher(latitude, longitude);
@@ -407,6 +442,7 @@ async function boot(latitude, longitude, locationName) {
     pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
     melody: 'melodyVolume', texture: 'textureVolume',
     percussion: 'percussionVolume', drone: 'droneVolume',
+    choir: 'choirVolume',
   };
   const mutedVoices = new Set();
 

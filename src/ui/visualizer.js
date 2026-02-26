@@ -21,6 +21,7 @@
 // Color palettes for different times of day
 const SKY_COLORS = {
   night:     { top: [8, 8, 20],      bottom: [15, 15, 35] },
+  blueHour:  { top: [15, 20, 55],    bottom: [35, 40, 80] },
   dawn:      { top: [30, 20, 50],    bottom: [180, 100, 60] },
   morning:   { top: [60, 100, 160],  bottom: [140, 170, 200] },
   afternoon: { top: [70, 120, 180],  bottom: [150, 180, 210] },
@@ -81,6 +82,11 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     moonset: null,
     // Milky Way + shooting star intensity (0-1, computed in main.js)
     milkyWayIntensity: 0,
+    // Biome + elevation + aurora for terrain silhouette and northern lights
+    biome: 'grassland',
+    elevation: 0,
+    terrainSeed: 0,
+    auroraIntensity: 0,
   };
 
   // Particles
@@ -149,16 +155,52 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     generateClouds();
   }
 
+  // Biome-aware terrain profiles — each biome defines sine harmonics that create
+  // a distinctive silhouette shape. The exponent sharpens (>1) or softens (<1) peaks.
+  const TERRAIN_PROFILES = {
+    mountain:  { baseHeight: 0.55, harmonics: [{ freq: 0.005, amp: 0.12 }, { freq: 0.012, amp: 0.06 }, { freq: 0.025, amp: 0.04 }], exponent: 2.0 },
+    grassland: { baseHeight: 0.78, harmonics: [{ freq: 0.008, amp: 0.02 }, { freq: 0.003, amp: 0.01 }], exponent: 1.0 },
+    coastal:   { baseHeight: 0.75, harmonics: [{ freq: 0.006, amp: 0.04 }, { freq: 0.015, amp: 0.03 }, { freq: 0.035, amp: 0.02 }], exponent: 0.8 },
+    desert:    { baseHeight: 0.73, harmonics: [{ freq: 0.004, amp: 0.04 }, { freq: 0.009, amp: 0.02 }], exponent: 0.7 },
+    forest:    { baseHeight: 0.68, harmonics: [{ freq: 0.007, amp: 0.05 }, { freq: 0.018, amp: 0.03 }, { freq: 0.04, amp: 0.02 }, { freq: 0.08, amp: 0.01 }], exponent: 1.2 },
+    urban:     { baseHeight: 0.72, harmonics: [{ freq: 0.01, amp: 0.03 }, { freq: 0.03, amp: 0.02 }], exponent: 3.0, quantize: 0.015 },
+    arctic:    { baseHeight: 0.76, harmonics: [{ freq: 0.005, amp: 0.015 }, { freq: 0.002, amp: 0.01 }], exponent: 1.0 },
+    wetland:   { baseHeight: 0.80, harmonics: [{ freq: 0.006, amp: 0.01 }], exponent: 0.8 },
+    tropical:  { baseHeight: 0.67, harmonics: [{ freq: 0.006, amp: 0.06 }, { freq: 0.014, amp: 0.04 }, { freq: 0.03, amp: 0.02 }, { freq: 0.06, amp: 0.01 }], exponent: 1.2 },
+  };
+
   function generateLandscape() {
     landscape = [];
     const segments = Math.ceil(width / 4);
+    const profile = TERRAIN_PROFILES[state.biome] || TERRAIN_PROFILES.grassland;
+    const seed = state.terrainSeed || 0;
+
+    // Elevation modifies base height: higher = more sky visible (lower baseHeight)
+    const elevationShift = Math.min(0.15, Math.max(0, (state.elevation || 0) / 8000));
+    const baseY = (profile.baseHeight - elevationShift) * height;
+
     for (let i = 0; i <= segments; i++) {
       const x = (i / segments) * width;
-      // Layered sine waves for natural-looking hills
-      const y = height * 0.7
-        + Math.sin(i * 0.02) * height * 0.06
-        + Math.sin(i * 0.005 + 1.5) * height * 0.08
-        + Math.sin(i * 0.012 + 3) * height * 0.03;
+      // Sum layered sine harmonics with seed-derived phase offsets
+      let yOffset = 0;
+      for (let h = 0; h < profile.harmonics.length; h++) {
+        const { freq, amp } = profile.harmonics[h];
+        // Deterministic phase from seed so same location = same terrain
+        const phase = (seed * (h + 1) * 0.7) % (Math.PI * 2);
+        const raw = Math.sin(i * freq + phase);
+        // Exponent sharpens peaks (mountain) or softens them (desert/coastal)
+        const shaped = Math.sign(raw) * Math.pow(Math.abs(raw), profile.exponent);
+        yOffset += shaped * height * amp;
+      }
+
+      let y = baseY + yOffset;
+
+      // Urban biome: step-quantize for blocky skyline silhouette
+      if (profile.quantize) {
+        const step = profile.quantize * height;
+        y = Math.round(y / step) * step;
+      }
+
       landscape.push({ x, y });
     }
   }
@@ -301,7 +343,12 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   // ── Dynamic Color Palette ──
 
   function generateColorPalette() {
-    const timeColors = SKY_COLORS[state.timeOfDay] || SKY_COLORS.night;
+    // Blue hour: the deep blue-purple phase between sunset and full night
+    const isBlueHour = state.brightness > 0.08 && state.brightness < 0.22 &&
+      (state.timeOfDay === 'dusk' || state.timeOfDay === 'night');
+    const timeColors = isBlueHour
+      ? SKY_COLORS.blueHour
+      : (SKY_COLORS[state.timeOfDay] || SKY_COLORS.night);
     const shift = WEATHER_COLOR_SHIFT[state.weatherCategory] || WEATHER_COLOR_SHIFT.clear;
 
     const top = adjustColor(timeColors.top, shift);
@@ -356,6 +403,22 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     const palette = generateColorPalette();
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, `rgb(${palette.top[0]}, ${palette.top[1]}, ${palette.top[2]})`);
+
+    // Multi-stop gradient during golden hour — horizon glow band
+    if (state.sunTransition > 0.1) {
+      const isRising = state.timeOfDay === 'dawn' || state.timeOfDay === 'morning';
+      const glowR = isRising ? 255 : 220;
+      const glowG = isRising ? 180 : 100;
+      const glowB = isRising ? 80 : 50;
+      const glowStrength = state.sunTransition * 0.5;
+      // Blend glow with the base bottom color
+      const midR = Math.round(palette.bottom[0] * (1 - glowStrength) + glowR * glowStrength);
+      const midG = Math.round(palette.bottom[1] * (1 - glowStrength) + glowG * glowStrength);
+      const midB = Math.round(palette.bottom[2] * (1 - glowStrength) + glowB * glowStrength);
+      gradient.addColorStop(0.55, `rgb(${palette.top[0]}, ${palette.top[1]}, ${palette.top[2]})`);
+      gradient.addColorStop(0.75, `rgb(${midR}, ${midG}, ${midB})`);
+    }
+
     gradient.addColorStop(1, `rgb(${palette.bottom[0]}, ${palette.bottom[1]}, ${palette.bottom[2]})`);
 
     ctx.fillStyle = gradient;
@@ -363,13 +426,19 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
   }
 
   function drawStars(fftData) {
-    if (state.brightness > 0.5) return; // No stars during day
-    const starAlpha = Math.max(0, (0.5 - state.brightness) * 2);
+    if (state.brightness > 0.55) return; // No stars during bright day
+    const starAlpha = Math.max(0, (0.55 - state.brightness) * 2);
+
+    // During transition (brightness 0.3–0.55), only the brightest stars appear
+    // — the "first stars" effect you see at dusk before full darkness.
+    const isTransition = state.brightness > 0.3;
+    const firstStarThreshold = isTransition ? 1.2 : 0;
 
     // High-frequency energy (arpeggio range) drives star pulse amplitude
     const highFreqEnergy = fftData ? averageBins(fftData, 180, 256) : 0;
 
     for (const star of stars) {
+      if (isTransition && star.size < firstStarThreshold) continue;
       // Base twinkle + FFT boost on amplitude
       const twinkle = clamp(0.5 + Math.sin(time * star.twinkleSpeed + star.phase) * (0.5 + highFreqEnergy * 0.6), 0, 1);
       const alpha = starAlpha * twinkle * 0.8;
@@ -515,6 +584,71 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       shootingStarTimer = null;
     }
     shootingStars = [];
+  }
+
+  // ── Northern Lights (Aurora Borealis) ──
+
+  /**
+   * Draw animated aurora curtains for high-latitude clear dark nights.
+   * 6 vertical curtain bands with undulating top edges, green/purple palette.
+   * Gated by auroraIntensity (0-1) computed from latitude × darkness × clarity.
+   */
+  function drawNorthernLights() {
+    const intensity = state.auroraIntensity ?? 0;
+    if (intensity <= 0.01) return;
+
+    const t = Date.now() / 1000; // Time in seconds for smooth animation
+
+    // 6 curtain bands at different horizontal positions
+    const bands = [
+      { xCenter: 0.15, hue: 120, sat: 80, baseAlpha: 0.08, freqMod: 1.0 },
+      { xCenter: 0.32, hue: 140, sat: 75, baseAlpha: 0.10, freqMod: 0.8 },
+      { xCenter: 0.48, hue: 120, sat: 90, baseAlpha: 0.12, freqMod: 1.2 },
+      { xCenter: 0.65, hue: 280, sat: 60, baseAlpha: 0.06, freqMod: 0.9 },
+      { xCenter: 0.78, hue: 130, sat: 85, baseAlpha: 0.09, freqMod: 1.1 },
+      { xCenter: 0.92, hue: 260, sat: 55, baseAlpha: 0.05, freqMod: 0.7 },
+    ];
+
+    for (const band of bands) {
+      const alpha = intensity * band.baseAlpha;
+      if (alpha < 0.003) continue;
+
+      const bandWidth = width * 0.12;
+      const xStart = band.xCenter * width - bandWidth / 2;
+      // Curtain top varies between 12-30% of height
+      const topY = height * (0.12 + 0.08 * Math.sin(t * 0.15 * band.freqMod + band.xCenter * 10));
+      // Curtain bottom fades out by 55% of height
+      const bottomY = height * 0.55;
+
+      // Draw vertical gradient band with undulating edge
+      ctx.beginPath();
+
+      // Top edge: undulating sine-wave path (the "curtain" ripple)
+      const steps = 20;
+      for (let i = 0; i <= steps; i++) {
+        const x = xStart + (i / steps) * bandWidth;
+        // 2 sine waves at different frequencies for organic undulation
+        const wave1 = Math.sin(x * 0.008 + t * 0.3 * band.freqMod) * height * 0.04;
+        const wave2 = Math.sin(x * 0.015 + t * 0.5 + band.hue) * height * 0.02;
+        const y = topY + wave1 + wave2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+
+      // Close path to bottom
+      ctx.lineTo(xStart + bandWidth, bottomY);
+      ctx.lineTo(xStart, bottomY);
+      ctx.closePath();
+
+      // Vertical gradient: bright at top, transparent at bottom
+      const grad = ctx.createLinearGradient(0, topY, 0, bottomY);
+      grad.addColorStop(0, `hsla(${band.hue}, ${band.sat}%, 60%, ${alpha})`);
+      grad.addColorStop(0.3, `hsla(${band.hue}, ${band.sat}%, 50%, ${alpha * 0.6})`);
+      grad.addColorStop(0.7, `hsla(${band.hue}, ${band.sat}%, 40%, ${alpha * 0.15})`);
+      grad.addColorStop(1, `hsla(${band.hue}, ${band.sat}%, 30%, 0)`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
   }
 
   /**
@@ -696,7 +830,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     ctx.restore();
   }
 
-  function drawAurora() {
+  function drawGoldenHourShimmer() {
     if (state.sunTransition <= 0) return;
 
     const intensity = state.sunTransition;
@@ -721,6 +855,55 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
 
       const hue = hueBase + i * 20;
       ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${intensity * 0.08})`;
+      ctx.fill();
+    }
+  }
+
+  // ── Crepuscular Rays (God Rays) ──
+
+  /**
+   * Draws faint triangular light rays fanning from the sun when it is near
+   * the horizon. Active during golden hour (sunTransition > 0.15) when the
+   * sun is low enough for rays to be visible (t < 0.15 or t > 0.85).
+   */
+  function drawCrepuscularRays() {
+    if (state.sunTransition < 0.15) return;
+
+    const pos = celestialPosition(state.sunrise, state.sunset, 0.10);
+    if (!pos) return;
+
+    const { x: sunX, y: sunY, t } = pos;
+
+    // Only when sun is near horizon
+    const horizonProximity = Math.min(t * 6.67, (1 - t) * 6.67, 1);
+    if (horizonProximity > 0.6) return;
+
+    const rayIntensity = state.sunTransition * (1 - horizonProximity);
+    const rayCount = 8 + Math.floor(rayIntensity * 5);
+
+    for (let i = 0; i < rayCount; i++) {
+      const angle = (i / rayCount) * Math.PI - Math.PI / 2;
+      const jitter = Math.sin(time * 0.1 + i * 2.7) * 0.05;
+      const rayAngle = angle + jitter;
+
+      const rayLength = height * (0.3 + rayIntensity * 0.4);
+      const endX = sunX + Math.cos(rayAngle) * rayLength;
+      const endY = sunY + Math.sin(rayAngle) * rayLength;
+
+      const grad = ctx.createLinearGradient(sunX, sunY, endX, endY);
+      const alpha = rayIntensity * 0.04 * (0.6 + Math.sin(i * 1.3) * 0.4);
+      grad.addColorStop(0, `rgba(255, 200, 100, ${alpha})`);
+      grad.addColorStop(1, 'rgba(255, 200, 100, 0)');
+
+      const perpX = Math.cos(rayAngle + Math.PI / 2) * 15;
+      const perpY = Math.sin(rayAngle + Math.PI / 2) * 15;
+
+      ctx.beginPath();
+      ctx.moveTo(sunX + perpX, sunY + perpY);
+      ctx.lineTo(sunX - perpX, sunY - perpY);
+      ctx.lineTo(endX, endY);
+      ctx.closePath();
+      ctx.fillStyle = grad;
       ctx.fill();
     }
   }
@@ -1209,11 +1392,13 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     // Full redraw
     drawSky();
     drawStars(fftData);
-    drawMilkyWay();      // Galactic band — behind celestial bodies and clouds
-    drawShootingStars(); // Meteor streaks — same dark-sky conditions
+    drawMilkyWay();         // Galactic band — behind celestial bodies and clouds
+    drawNorthernLights();   // Aurora curtains — high latitude, dark, clear nights
+    drawShootingStars();    // Meteor streaks — same dark-sky conditions
+    drawCrepuscularRays();    // God rays — near horizon, before sun disc
     drawSun();
     drawMoon();
-    drawAurora();
+    drawGoldenHourShimmer();  // Sunrise/sunset shimmer bands
     drawClouds();
     drawWeatherParticles();
     drawSplashes();
@@ -1304,6 +1489,11 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
         } else if (intensity <= 0.1 && prevMilkyWayIntensity > 0.1) {
           stopShootingStars();    // sky no longer dark/clear enough
         }
+      }
+
+      // Regenerate terrain when biome, elevation, or seed changes
+      if (newState.biome !== undefined || newState.elevation !== undefined || newState.terrainSeed !== undefined) {
+        generateLandscape();
       }
 
       // Update firefly population when conditions change

@@ -27,12 +27,13 @@ Core mappings:
 - **Moon phase/fullness** modulate LFO and chorus behavior.
 - **AQI** introduces haze (filter damping + wetter reverb).
 - **Tides** (coastal) swell bass response.
-- **Season + latitude** add hemisphere-aware seasonal modulation.
+- **Season + latitude** add hemisphere-aware seasonal modulation (oscillator types, envelope profiles, filter warmth shift per season).
 - **UV index** opens arpeggio brightness and can trigger microtonal drift context.
+- **Biome** (land cover from OpenStreetMap) adjusts reverb wetness, master filter cutoff, and pad harmonic spread per terrain type.
 
 ## Voices
 
-The engine runs **8 voices**:
+The engine runs **9 voices**:
 
 | Voice | Role |
 |-------|------|
@@ -44,13 +45,14 @@ The engine runs **8 voices**:
 | **Texture** | Atmospheric noise layer with optional rain-drop transient overlay |
 | **Percussion** | Subtle membrane/metal patterns by weather category |
 | **Wind Chime** | Sparse high-register stochastic notes activated by wind |
+| **Choir** | Formant-filtered voice with dual-synth crossfade, vowel shapes (aah/eeh/ooh/uuu) that drift with mood, driven by humidity + moon fullness |
 
 ## Audio Architecture
 
 Main path:
 
 ```
-[Pad/Arp/Bass/Texture/Drone/Melody via spatial panners]
+[Pad/Arp/Bass/Texture/Drone/Melody/Choir via spatial panners]
   -> [Chorus] -> [Delay] -> [Reverb] -> [Master Filter]
   -> [Master Gain Stack] -> [Limiter] -> [Analysers] -> [Destination]
 ```
@@ -65,7 +67,7 @@ Additional paths:
 
 - Uses **Tone.js `Panner3D` with HRTF** on supported browsers for binaural headphone imaging.
 - Falls back automatically to stereo `Panner` if `Panner3D` is unavailable.
-- Arpeggio, melody, percussion, texture, pad, and wind-chime are spatialized; bass and drone remain center-focused for mono-safe low end.
+- Arpeggio, melody, percussion, texture, pad, wind-chime, and choir are spatialized; bass and drone remain center-focused for mono-safe low end.
 - Existing weather-driven pan/width params are reused to control 3D position/depth.
 - This is **Web Audio app-level spatialization**. It does not force Apple OS-level personalized/head-tracked Spatial Audio behavior.
 
@@ -92,11 +94,12 @@ The full-screen canvas visualizer is weather/audio reactive and currently includ
 - Sun and moon positioning from rise/set times
 - Moon phase shading and fullness glow
 - Stars with FFT-reactive twinkle at night
-- Sunrise/sunset aurora bands
+- Blue hour gradients and crepuscular rays during golden hour
+- Northern lights (aurora borealis) at high latitudes during clear dark nights
 - Animated clouds with wind drift
 - Weather particles (rain/snow/fog) and rain splash ripples
 - Lightning flashes in storms
-- Waveform-reactive landscape silhouette
+- Biome-specific terrain silhouettes (mountain peaks, coastal cliffs, urban skylines, rolling grasslands, etc.)
 - Tide + bass-reactive water layer
 - Fireflies (conditional warm-night behavior)
 - Snow accumulation and melt
@@ -133,6 +136,7 @@ All APIs used are free and require no API keys:
 | [Open-Meteo Weather](https://open-meteo.com) | Temperature, apparent temperature, humidity, pressure, wind, weather code, cloud cover, UV, sunrise/sunset | 1 minute |
 | [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | US AQI, PM2.5 | 15 minutes |
 | [NOAA CO-OPS](https://tidesandcurrents.noaa.gov/api/) | Tide water level (nearest coastal station) | 10 minutes |
+| [OpenStreetMap Overpass](https://overpass-api.de/) | Land cover / biome classification | Once per location |
 | Client-side calculation | Moon phase/fullness, season factor, pressure trend | Per weather update |
 | Browser Geolocation API | Initial coordinates | On startup |
 
@@ -168,6 +172,7 @@ src/
       texture.js
       percussion.js
       windchime.js
+      choir.js
   weather/
     fetcher.js
     fetcher.test.js
@@ -177,6 +182,7 @@ src/
     codes.js
     moon.js
     season.js
+    biome.js
   ui/
     display.js
     controls.js

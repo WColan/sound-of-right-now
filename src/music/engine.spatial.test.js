@@ -324,6 +324,28 @@ vi.mock('./voices/windchime.js', () => ({
   },
 }));
 
+vi.mock('./voices/choir.js', () => ({
+  createChoirVoice() {
+    return {
+      output: makeOutput(),
+      synthA: { volume: { value: 0 } },
+      synthB: { volume: { value: 0 } },
+      formantFilters: [],
+      setMood() {},
+      setVowel() {},
+      setFilterCutoff() {},
+      setVolume() {},
+      setFormantQ() {},
+      setTimbreProfile() {},
+      setSeasonalPalette() {},
+      playChord() {},
+      changeChord() {},
+      stop() {},
+      dispose() {},
+    };
+  },
+}));
+
 vi.mock('./progression.js', () => ({
   generateProgression() {
     return { chords: [{ notes: ['C4'], chordTones: ['C4'], scaleTones: ['C4'], bassNote: 'C2', chordRootName: 'C', quality: 'maj7', degree: 1 }], harmonicRhythm: '4m', length: 1 };
