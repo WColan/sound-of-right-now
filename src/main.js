@@ -98,13 +98,12 @@ function onWeatherUpdate(weather) {
   // Composite 0-1 value from three conditions that gate both the visual band
   // and the audio shimmer — dark night, clear sky, dim moon.
   //  padBrightness < 0.35 ≈ night/deep-dusk (it tracks time-of-day closely)
-  //  moonFullness  < 0.4  ≈ crescent/new moon (bright moon washes the Milky Way out)
+  //  moonFullness  < 0.55 ≈ up to half-moon; a crescent (0.37) gives ~33% intensity
   const mwBrightnessAlpha = Math.max(0, (0.35 - musicalParams.padBrightness) / 0.35);
-  const mwMoonAlpha       = Math.max(0, (0.4 - (musicalParams._meta.moonFullness ?? 0)) / 0.4);
+  const mwMoonAlpha       = Math.max(0, (0.55 - (musicalParams._meta.moonFullness ?? 0)) / 0.55);
   const milkyWayIntensity = musicalParams._meta.category === 'clear'
     ? Math.min(mwBrightnessAlpha, mwMoonAlpha)
     : 0;
-
   // Update melody's golden-hour / full-moon probability boosts
   if (engine) {
     engine.updateCelestialContext(
@@ -198,7 +197,7 @@ function onWeatherUpdate(weather) {
 /**
  * Set up data fetching for a given location.
  */
-async function startForLocation(latitude, longitude, locationName) {
+async function startForLocation(latitude, longitude, locationName, { fadeIn = false } = {}) {
   const requestId = ++currentLocationRequestId;
   display.setLocation(locationName || 'Loading...');
 
@@ -219,7 +218,9 @@ async function startForLocation(latitude, longitude, locationName) {
     engine = createSoundEngine();
     engine.start({ bpm: 72 });
     engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
-    engine.setUserGainScale(userVolumeScale, 0);
+    // First load: start silent and swell up; location changes: cut in immediately
+    engine.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
+    if (fadeIn) engine.setUserGainScale(userVolumeScale, 3);
     engine.setSleepGainScale(1, 0);
     // Recreate interpolator too — it closes over the old (now-disposed) engine
     interpolator = createInterpolator(engine);
@@ -327,12 +328,13 @@ async function boot(latitude, longitude, locationName) {
   // Wire master volume slider
   const volSlider = document.getElementById('volume-slider');
   if (volSlider) {
-    // Restore persisted value
-    const savedPercent = Number(localStorage.getItem('masterVolume'));
+    // Restore persisted value — guard against Number(null) === 0 footgun
+    const savedItem = localStorage.getItem('masterVolume');
+    const savedPercent = savedItem !== null ? Number(savedItem) : NaN;
     const safePercent = Number.isFinite(savedPercent) ? Math.max(0, Math.min(100, savedPercent)) : 80;
     volSlider.value = safePercent;
     userVolumeScale = safePercent / 100;
-    engine.setUserGainScale(userVolumeScale, 0);
+    // Don't set engine gain yet — fade-in happens after engine.start() below
 
     volSlider.addEventListener('input', () => {
       userVolumeScale = volSlider.value / 100;
@@ -574,8 +576,8 @@ async function boot(latitude, longitude, locationName) {
     delayMs: 1000,
   });
 
-  // Connect to real weather data
-  await startForLocation(latitude, longitude, locationName);
+  // Connect to real weather data — fade in on first load so audio swells in gently
+  await startForLocation(latitude, longitude, locationName, { fadeIn: true });
 }
 
 /**
