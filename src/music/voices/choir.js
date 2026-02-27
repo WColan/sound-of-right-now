@@ -49,13 +49,18 @@ export function createChoirVoice() {
   const formantSum = new Tone.Gain(1);
   formantFilters.forEach(f => f.connect(formantSum));
 
+  // Formant filtering is very subtractive; add makeup gain so the choir
+  // can sit in the mix without needing extreme synth volume values.
+  const formantMakeup = new Tone.Gain(1.5);
+  formantSum.connect(formantMakeup);
+
   // Master output filter (lowpass) — overall brightness control
   const outputFilter = new Tone.Filter({
     frequency: 4000,
     type: 'lowpass',
     rolloff: -12,
   });
-  formantSum.connect(outputFilter);
+  formantMakeup.connect(outputFilter);
 
   // ── Synth configuration — sawtooth for harmonic richness ──
   const synthOptions = {
@@ -98,9 +103,10 @@ export function createChoirVoice() {
   let currentNotes = [];
   let currentMood = 'calm';
   let currentVowel = 'ooh';
+  let crossfadeTimeout = null;
 
   // Master volume applied to both
-  const masterVolume = -22;
+  const masterVolume = -20;
   synthA.volume.value = masterVolume;
   synthB.volume.value = masterVolume;
 
@@ -132,9 +138,8 @@ export function createChoirVoice() {
   // ── Vowel drift interval ──
   let driftInterval = null;
 
-  function startDrift() {
-    if (driftInterval) return;
-    driftInterval = setInterval(() => {
+  function scheduleDrift() {
+    driftInterval = setTimeout(() => {
       const pool = MOOD_VOWELS[currentMood] || MOOD_VOWELS.calm;
       // Pick a different vowel from the pool
       const candidates = pool.filter(v => v !== currentVowel);
@@ -142,12 +147,18 @@ export function createChoirVoice() {
         ? candidates[Math.floor(Math.random() * candidates.length)]
         : pool[0];
       applyVowel(nextVowel, 10); // 10s ramp
-    }, 15000 + Math.random() * 20000); // 15–35s
+      scheduleDrift(); // re-schedule with fresh random delay
+    }, 15000 + Math.random() * 20000); // 15–35s, re-randomized each tick
+  }
+
+  function startDrift() {
+    if (driftInterval) return;
+    scheduleDrift();
   }
 
   function stopDrift() {
     if (driftInterval) {
-      clearInterval(driftInterval);
+      clearTimeout(driftInterval);
       driftInterval = null;
     }
   }
@@ -165,6 +176,13 @@ export function createChoirVoice() {
     formantFilters[2].frequency.rampTo(freqs[2], rampTime);
   }
 
+  function clearCrossfadeTimeout() {
+    if (crossfadeTimeout) {
+      clearTimeout(crossfadeTimeout);
+      crossfadeTimeout = null;
+    }
+  }
+
   /**
    * Start playing a chord (initial play — no crossfade needed).
    * Notes are automatically dropped one octave.
@@ -172,18 +190,21 @@ export function createChoirVoice() {
    */
   function playChord(notes) {
     const lowNotes = dropOctave(notes);
+    const now = Tone.now();
+    clearCrossfadeTimeout();
     // Silence everything first
     synthA.releaseAll();
     synthB.releaseAll();
-    gainA.gain.cancelScheduledValues(Tone.now());
-    gainB.gain.cancelScheduledValues(Tone.now());
+    gainA.gain.cancelScheduledValues(now);
+    gainB.gain.cancelScheduledValues(now);
     gainA.gain.value = 0;
     gainB.gain.value = 0;
 
     currentNotes = lowNotes;
 
     if (lowNotes.length > 0) {
-      activeSynth.triggerAttack(lowNotes, Tone.now(), 0.3);
+      activeSynth.triggerAttack(lowNotes, now, 0.3);
+      activeGain.gain.setValueAtTime(0, now);
       activeGain.gain.linearRampTo(1, CROSSFADE_TIME);
     }
 
@@ -215,8 +236,10 @@ export function createChoirVoice() {
 
     // Release the old chord after the fade completes
     const oldSynth = activeSynth;
-    setTimeout(() => {
+    clearCrossfadeTimeout();
+    crossfadeTimeout = setTimeout(() => {
       oldSynth.releaseAll();
+      crossfadeTimeout = null;
     }, CROSSFADE_TIME * 1000 + 500);
 
     // Swap roles
@@ -273,10 +296,10 @@ export function createChoirVoice() {
      */
     setTimbreProfile(profile) {
       const profiles = {
-        warm:   { attack: 5,   release: 12, volume: masterVolume + 2 },
-        cool:   { attack: 4,   release: 10, volume: masterVolume },
-        cold:   { attack: 6,   release: 14, volume: masterVolume - 2 },
-        stormy: { attack: 2,   release: 6,  volume: masterVolume - 4 },
+        warm:   { attack: 5, release: 12 },
+        cool:   { attack: 4, release: 10 },
+        cold:   { attack: 6, release: 14 },
+        stormy: { attack: 2, release: 6 },
       };
       const p = profiles[profile] || profiles.cool;
       const opts = { envelope: { attack: p.attack, release: p.release } };
@@ -305,6 +328,7 @@ export function createChoirVoice() {
 
     stop() {
       stopDrift();
+      clearCrossfadeTimeout();
       synthA.releaseAll();
       synthB.releaseAll();
       gainA.gain.cancelScheduledValues(Tone.now());
@@ -322,6 +346,7 @@ export function createChoirVoice() {
       gainB.dispose();
       formantFilters.forEach(f => f.dispose());
       formantSum.dispose();
+      formantMakeup.dispose();
       outputFilter.dispose();
     },
   };

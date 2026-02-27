@@ -178,7 +178,7 @@ function onWeatherUpdate(weather) {
     // Biome + elevation + terrain seed for terrain silhouette (Feature 1/5)
     biome: currentBiome,
     elevation: weather.elevation ?? 0,
-    terrainSeed: Math.abs(Math.sin(currentLatitude * 1000 + currentLongitude * 1000)) * 10000,
+    terrainSeed: Math.abs(Math.sin(currentLatitude * 1234.5 + currentLongitude * 6789.1)) * 10000,
     // Aurora intensity for northern lights (Feature 4)
     auroraIntensity,
   });
@@ -266,16 +266,21 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
   currentTideData = null;
   currentAqiData = null;
 
-  // Classify biome for this location (fire-and-forget; result used on next weather update)
+  // Classify biome for this location once weather provides elevation.
+  // Fire-and-forget; result is used on a subsequent weather update.
   currentBiome = 'grassland'; // Reset to default while classifying
-  classifyBiome(latitude, longitude, { elevation: 0 })
-    .then(b => { if (requestId === currentLocationRequestId) currentBiome = b; })
-    .catch(() => { /* Biome classification failed — grassland fallback is fine */ });
+  let biomeClassificationStarted = false;
 
   // Set up weather fetching
   const nextWeatherFetcher = createWeatherFetcher(latitude, longitude);
   nextWeatherFetcher.onUpdate((weather) => {
     if (requestId !== currentLocationRequestId) return;
+    if (!biomeClassificationStarted) {
+      biomeClassificationStarted = true;
+      classifyBiome(latitude, longitude, { elevation: weather.elevation ?? 0 })
+        .then(b => { if (requestId === currentLocationRequestId) currentBiome = b; })
+        .catch(() => { /* Biome classification failed — grassland fallback is fine */ });
+    }
     onWeatherUpdate(weather);
   });
   weatherFetcher = nextWeatherFetcher;

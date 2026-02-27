@@ -17,6 +17,12 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 // Cache: `"lat,lng"` → biome string (rounded to 2 decimals for cache key)
 const biomeCache = new Map();
 
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    biomeCache.clear();
+  });
+}
+
 /**
  * Classify the biome at a given location.
  *
@@ -143,11 +149,11 @@ function classifyHeuristic(latitude, longitude, elevation) {
   if (elevation > 2000) return 'mountain';
   if (elevation > 1000 && absLat > 40) return 'mountain';
 
-  // Tropical band: within 23.5° of equator, low elevation
-  if (absLat < 23.5 && elevation < 500) return 'tropical';
+  // Tropical band: narrower equatorial band, low elevation
+  if (absLat < 15 && elevation < 500) return 'tropical';
 
   // Desert bands: 15-35° latitude, low elevation (Hadley cell deserts)
-  if (absLat > 15 && absLat < 35 && elevation < 800) return 'desert';
+  if (absLat >= 15 && absLat < 35 && elevation < 800) return 'desert';
 
   return 'grassland';
 }

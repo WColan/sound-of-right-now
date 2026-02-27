@@ -597,7 +597,7 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     const intensity = state.auroraIntensity ?? 0;
     if (intensity <= 0.01) return;
 
-    const t = Date.now() / 1000; // Time in seconds for smooth animation
+    const t = time; // Reuse frame time so aurora stays in sync with the animation loop
 
     // 6 curtain bands at different horizontal positions
     const bands = [
@@ -1470,6 +1470,9 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
     updateState(newState) {
       const prevCategory = state.weatherCategory;
       const prevMilkyWayIntensity = state.milkyWayIntensity ?? 0;
+      const prevBiome = state.biome;
+      const prevElevation = state.elevation;
+      const prevTerrainSeed = state.terrainSeed;
       Object.assign(state, newState);
 
       // Start/stop lightning based on storm state
@@ -1492,7 +1495,11 @@ export function createVisualizer(canvas, analyser, waveformAnalyser) {
       }
 
       // Regenerate terrain when biome, elevation, or seed changes
-      if (newState.biome !== undefined || newState.elevation !== undefined || newState.terrainSeed !== undefined) {
+      if (
+        (newState.biome !== undefined && newState.biome !== prevBiome) ||
+        (newState.elevation !== undefined && newState.elevation !== prevElevation) ||
+        (newState.terrainSeed !== undefined && newState.terrainSeed !== prevTerrainSeed)
+      ) {
         generateLandscape();
       }
 

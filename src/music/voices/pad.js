@@ -58,7 +58,7 @@ export function createPadVoice() {
   let currentNotes = [];
 
   // Master volume applied to both
-  const masterVolume = -14;
+  const masterVolume = -16;
   synthA.volume.value = masterVolume;
   synthB.volume.value = masterVolume;
 

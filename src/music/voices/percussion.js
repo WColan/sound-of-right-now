@@ -140,7 +140,7 @@ export function createPercussionVoice() {
       release: 0.8,
     },
   });
-  membrane.volume.value = -24;
+  membrane.volume.value = -22;
 
   const metal = new Tone.MetalSynth({
     frequency: 200,
@@ -154,14 +154,14 @@ export function createPercussionVoice() {
     resonance: 4000,
     octaves: 1.5,
   });
-  metal.volume.value = -28;
+  metal.volume.value = -26;
 
   membrane.connect(panner);
   metal.connect(panner);
 
   // State
   let currentPatternData = PERCUSSION_PATTERNS.pulse[0];
-  let velocityScale = 1.0; // Density now scales velocities
+  let velocityScale = 1.0; // Density scales velocities but preserves an audibility floor
   let sequence = null;
 
   function buildSequence() {
@@ -179,7 +179,7 @@ export function createPercussionVoice() {
       if (Math.random() > p) return;
 
       const velocity = Math.min(1, v * velocityScale);
-      if (velocity < 0.01) return;
+      if (velocity < 0.003) return;
 
       if (hit === 'membrane') {
         const pitch = 40 + Math.random() * 30;
@@ -272,7 +272,8 @@ export function createPercussionVoice() {
      * @param {number} value 0-1
      */
     setDensity(value) {
-      velocityScale = Math.max(0, Math.min(2, value * 2));
+      const clamped = Math.max(0, Math.min(1, value));
+      velocityScale = 0.35 + clamped * 1.65;
     },
 
     /** Set stereo panning (-1 left, 0 center, 1 right) */

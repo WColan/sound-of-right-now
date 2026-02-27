@@ -253,7 +253,7 @@ export function mapWeatherToMusic(weather, options = {}) {
   // ── Choir volume ──
   // The formant choir is driven by humidity (moist air = fuller, more present voice)
   // and moonfulness (full moon brings the choir forward in the mix).
-  const choirVolume = lerp(-28, -16, clamp(humNorm * 0.5 + moonFullness * 0.5, 0, 1));
+  const choirVolume = lerp(-24, -12, clamp(humNorm * 0.5 + moonFullness * 0.5, 0, 1));
 
   // ── Binaural panning ──
   const arpeggioPan = -percussionPan * 0.4;
@@ -408,16 +408,16 @@ const WEATHER_PALETTES = {
     padSpread: 10,
     textureVolume: -40,
     noiseType: null,
-    padVolume: -14,
-    percussionVolume: -26,
+    padVolume: -16,
+    percussionVolume: -22,
     melodyVolumeOffset: 0,
   },
   cloudy: {
     padSpread: 18,
     textureVolume: -32,
     noiseType: null,
-    padVolume: -13,
-    percussionVolume: -24,
+    padVolume: -15,
+    percussionVolume: -21,
     melodyVolumeOffset: -2,
   },
   fog: {
@@ -425,24 +425,24 @@ const WEATHER_PALETTES = {
     textureVolume: -22,
     noiseType: 'pink',
     textureFilterCutoff: 600,
-    padVolume: -12,
-    percussionVolume: -28,
+    padVolume: -14,
+    percussionVolume: -24,
     melodyVolumeOffset: -6,
   },
   drizzle: {
     padSpread: 18,
     textureVolume: -24,
     noiseType: 'pink',
-    padVolume: -13,
-    percussionVolume: -24,
+    padVolume: -15,
+    percussionVolume: -20,
     melodyVolumeOffset: -2,
   },
   rain: {
     padSpread: 22,
     textureVolume: -16,
     noiseType: 'pink',
-    padVolume: -13,
-    percussionVolume: -22,
+    padVolume: -15,
+    percussionVolume: -19,
     melodyVolumeOffset: -3,
   },
   snow: {
@@ -450,16 +450,16 @@ const WEATHER_PALETTES = {
     textureVolume: -20,
     noiseType: 'white',
     textureFilterCutoff: 800,
-    padVolume: -12,
-    percussionVolume: -28,
+    padVolume: -14,
+    percussionVolume: -24,
     melodyVolumeOffset: -4,
   },
   storm: {
     padSpread: 30,
     textureVolume: -10,
     noiseType: 'brown',
-    padVolume: -11,
-    percussionVolume: -16,
+    padVolume: -13,
+    percussionVolume: -14,
     melodyVolumeOffset: -2,
   },
 };

@@ -102,6 +102,34 @@ export function createSoundEngine() {
 
   const analyser = new Tone.Analyser('fft', 256);
   const waveformAnalyser = new Tone.Analyser('waveform', 256);
+  const createOptionalMeter = () => {
+    let MeterCtor = null;
+    try {
+      MeterCtor = Tone.Meter;
+    } catch {
+      return null;
+    }
+    if (typeof MeterCtor !== 'function') return null;
+    try {
+      return new MeterCtor();
+    } catch {
+      return null;
+    }
+  };
+  const voiceMeters = {
+    pad: createOptionalMeter(),
+    choir: createOptionalMeter(),
+    percussion: createOptionalMeter(),
+  };
+  const tapMeter = (source, meter) => {
+    if (!meter || typeof source?.connect !== 'function') return;
+    source.connect(meter);
+  };
+  const readMeterDb = (meter) => {
+    const value = meter?.getValue?.();
+    const sample = Array.isArray(value) ? Math.max(...value) : value;
+    return Number.isFinite(sample) ? sample : null;
+  };
 
   // Chain shared effects: chorus -> delay -> reverb -> master filter -> velocity -> limiter -> analysers -> destination
   chorus.connect(delay);
@@ -215,6 +243,7 @@ export function createSoundEngine() {
 
   // Connect voices -> spatial nodes -> wideners/chorus bus
   pad.output.connect(padHPF);
+  tapMeter(pad.output, voiceMeters.pad);
   padHPF.connect(padPanner.node);
   padPanner.node.connect(milkyWayTremolo);
   milkyWayTremolo.connect(chorus);
@@ -240,6 +269,7 @@ export function createSoundEngine() {
 
   // Choir → spatial panner → chorus (same main effects chain as pad/arpeggio/melody)
   choir.output.connect(choirPanner.node);
+  tapMeter(choir.output, voiceMeters.choir);
   choirPanner.node.connect(chorus);
 
   // Wind chime connects directly to reverb (no chorus/delay smear).
@@ -250,6 +280,7 @@ export function createSoundEngine() {
   percussionReverb.connect(percussionPanner.node);
   percussionPanner.node.connect(masterVelocity);
   percussion.output.connect(percussionReverb);
+  tapMeter(percussion.output, voiceMeters.percussion);
 
   // Track current musical state
   let currentRoot = null;
@@ -439,6 +470,14 @@ export function createSoundEngine() {
     // Expose for visualization
     analyser,
     waveformAnalyser,
+    voiceMeters,
+    getVoiceLevels() {
+      return {
+        pad: readMeterDb(voiceMeters.pad),
+        choir: readMeterDb(voiceMeters.choir),
+        percussion: readMeterDb(voiceMeters.percussion),
+      };
+    },
 
     // Expose voices for direct control if needed
     voices: { pad, arpeggio, bass, texture, percussion, drone, melody, windChime, choir },
@@ -621,8 +660,8 @@ export function createSoundEngine() {
       // setting up the pad, arpeggio, bass, drone, and melody with the first chord.
 
       // Pad volume & brightness (initial chord set by progression player)
-      pad.synthA.volume.value = padVolume ?? -14;
-      pad.synthB.volume.value = padVolume ?? -14;
+      pad.synthA.volume.value = padVolume ?? -16;
+      pad.synthB.volume.value = padVolume ?? -16;
       pad.filter.frequency.value = padBrightness != null ? padBrightness * 8000 + 200 : 3000;
       if (padSpread != null) pad.setSpread(padSpread);
 
@@ -656,8 +695,8 @@ export function createSoundEngine() {
       percussion.setDensity(rhythmDensity ?? 0.2);
       percussion.panner.pan.value = percussionPan ?? 0;
       setSpatialPan(percussionPanner, (percussionPan ?? 0) * 0.75, 0);
-      percussion.membrane.volume.value = percussionVolume ?? -22;
-      percussion.metal.volume.value = (percussionVolume ?? -22) - 4;
+      percussion.membrane.volume.value = percussionVolume ?? -20;
+      percussion.metal.volume.value = (percussionVolume ?? -20) - 4;
       percussion.start();
 
       // Drone (note set by progression player via onChordChange)
@@ -673,7 +712,7 @@ export function createSoundEngine() {
       melody.synth.volume.value = melodyVolume ?? -20;
 
       // Choir — formant-filtered sustained chords
-      choir.setVolume(params.choirVolume ?? -22, 0);
+      choir.setVolume(params.choirVolume ?? -18, 0);
       if (melodyMood) choir.setMood(melodyMood);
 
       // Timbre profile — oscillator type + envelope character across voices
@@ -977,6 +1016,7 @@ export function createSoundEngine() {
       limiter.dispose();
       analyser.dispose();
       waveformAnalyser.dispose();
+      Object.values(voiceMeters).forEach((meter) => meter?.dispose?.());
       // Sub-bass bus
       subBus.dispose();
       subLowpass.dispose();
