@@ -92,6 +92,7 @@ canvas#visualizer {
 .listen-btn {
   background: none;
   border: 1px solid var(--text-secondary);
+  border-radius: 999px;
   color: var(--text-primary);
   padding: 0.86rem 2.7rem;
   font-size: 0.9rem;
@@ -699,13 +700,13 @@ canvas#visualizer {
     transition: opacity 1s ease, transform 0.3s ease;
   }
 
-  /* Location search: centered modal on mobile */
+  /* Location search: top-biased modal on mobile so iOS keyboard doesn't cover it */
   .location-search {
-    top: 50%;
+    top: 18%;
     bottom: auto;
     right: auto;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateX(-50%);
     width: calc(100vw - 4rem);
     max-width: 340px;
     background: rgba(10, 10, 15, 0.92);

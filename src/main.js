@@ -67,12 +67,19 @@ function getPressureTrend(pressureHpa) {
 /**
  * Compute aurora intensity for high-latitude locations.
  * Returns 0-1: product of latitude factor, darkness factor, and sky clarity.
- * Aurora is only visible above 55° latitude, in dark conditions, with clear skies.
+ *
+ * Thresholds are intentionally generous — aurora is high-altitude light that
+ * punches through moderate cloud cover and is faintly visible during late dusk:
+ *   Cloud cover: visible up to ~65%, fading progressively (not a hard cutoff)
+ *   Brightness:  faintly visible up to 0.3 (late dusk), peaks in full dark
  */
 function computeAuroraIntensity(lat, brightness, cloudCover) {
   const latFactor = Math.max(0, Math.min(1, (Math.abs(lat) - 55) / 15));
-  const darkFactor = Math.max(0, Math.min(1, (0.2 - brightness) / 0.2));
-  const clearFactor = Math.max(0, Math.min(1, (30 - cloudCover) / 30));
+  // Wider brightness window: faintly visible in late dusk (0.3), peaks at full dark
+  const darkFactor = Math.max(0, Math.min(1, (0.3 - brightness) / 0.3));
+  // Cloud cover: progressive dimming up to ~65%; quadratic for natural falloff
+  const cloudNorm = Math.min(1, cloudCover / 65);
+  const clearFactor = Math.max(0, 1 - cloudNorm * cloudNorm);
   return latFactor * darkFactor * clearFactor;
 }
 
@@ -113,15 +120,26 @@ function onWeatherUpdate(weather) {
   const moonset  = getMoonsetTime(now, weather.sunrise, weather.sunset);
 
   // ── Milky Way shimmer intensity ──
-  // Composite 0-1 value from three conditions that gate both the visual band
-  // and the audio shimmer — dark night, clear sky, dim moon.
-  //  padBrightness < 0.35 ≈ night/deep-dusk (it tracks time-of-day closely)
-  //  moonFullness  < 0.55 ≈ up to half-moon; a crescent (0.37) gives ~33% intensity
+  // Progressive 0-1 value: dark night + low cloud cover + dim moon.
+  // Instead of a binary clear/not-clear gate, cloud cover dims gradually:
+  //   0% cloud  → full visibility
+  //  25% cloud  → ~50% (still clearly visible through gaps)
+  //  50% cloud  → ~12% (faint glow between clouds)
+  //  70%+ cloud → effectively invisible
+  // Precipitation categories (rain, snow, storm, fog) kill it outright.
   const mwBrightnessAlpha = Math.max(0, (0.35 - musicalParams.padBrightness) / 0.35);
   const mwMoonAlpha       = Math.max(0, (0.55 - (musicalParams._meta.moonFullness ?? 0)) / 0.55);
-  const milkyWayIntensity = musicalParams._meta.category === 'clear'
-    ? Math.min(mwBrightnessAlpha, mwMoonAlpha)
-    : 0;
+  const mwCategory = musicalParams._meta.category;
+  const mwCloudPct = (weather.cloudCover ?? 0) / 100;
+  // Precipitation/fog blocks starlight entirely; clouds dim progressively
+  const mwPrecipBlock = (mwCategory === 'rain' || mwCategory === 'storm'
+    || mwCategory === 'snow' || mwCategory === 'fog' || mwCategory === 'drizzle')
+    ? 0 : 1;
+  // Quadratic falloff: gentle at low cloud %, steepens toward overcast
+  const mwCloudAlpha = Math.max(0, 1 - mwCloudPct * mwCloudPct * 2.0);
+  const milkyWayIntensity = mwPrecipBlock
+    * mwCloudAlpha
+    * Math.min(mwBrightnessAlpha, mwMoonAlpha);
   // ── Aurora intensity — computed outside engine guard for visualizer use too ──
   const auroraIntensity = computeAuroraIntensity(
     currentLatitude ?? 0, musicalParams.padBrightness, weather.cloudCover ?? 0
@@ -149,10 +167,11 @@ function onWeatherUpdate(weather) {
     engine.updateAuroraShimmer(auroraIntensity);
 
     // ── Milky Way shimmer ──
-    // Composite intensity (0-1) from three gating conditions:
+    // Composite intensity (0-1) from progressive conditions:
     //  1. Dark night  — padBrightness proxy (< 0.35 ≈ night/deep-dusk)
-    //  2. Clear sky   — category must be 'clear'
-    //  3. Dim moon    — moonFullness < 0.4 (bright moon washes it out)
+    //  2. Low clouds  — progressive dimming with cloud cover (quadratic)
+    //  3. Dim moon    — moonFullness < 0.55 (bright moon washes it out)
+    //  4. No precip   — rain/snow/fog/drizzle blocks starlight
     engine.updateMilkyWayShimmer(milkyWayIntensity);
   }
 
