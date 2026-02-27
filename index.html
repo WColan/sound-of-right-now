@@ -24,7 +24,10 @@
   </div>
 
   <div id="info-display" class="info-display hidden">
-    <div class="info-location" id="info-location"></div>
+    <div class="info-location-row">
+      <span class="info-location" id="info-location"></span>
+      <span class="info-time" id="info-time"></span>
+    </div>
     <div class="info-details" id="info-details"></div>
   </div>
 
@@ -45,7 +48,14 @@
   </div>
 
   <div id="controls" class="controls hidden">
-    <button id="pause-btn" class="control-btn" aria-label="pause">⏸</button>
+    <button id="pause-btn" class="control-btn" aria-label="pause">
+      <svg class="pause-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <line x1="5" y1="3" x2="5" y2="13"/><line x1="11" y1="3" x2="11" y2="13"/>
+      </svg>
+      <svg class="play-icon hidden" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none">
+        <polygon points="4,2 14,8 4,14"/>
+      </svg>
+    </button>
     <input type="range" id="volume-slider" min="0" max="100" value="80"
       aria-label="Master volume" class="volume-slider" />
     <button id="menu-btn" class="control-btn" aria-label="Open menu" aria-haspopup="menu" aria-expanded="false"><span class="menu-glyph" aria-hidden="true">⋯</span></button>
@@ -54,7 +64,8 @@
   <div id="secondary-menu" class="secondary-menu hidden" role="menu" aria-label="Actions">
     <button id="location-btn" class="control-btn menu-item" role="menuitem">change location</button>
     <button id="mix-btn" class="control-btn menu-item" role="menuitem" aria-label="Mix">mix</button>
-    <button id="info-btn" class="control-btn menu-item" role="menuitem" aria-label="What am I hearing">?</button>
+    <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Weather details">weather</button>
+    <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="Audio details">audio</button>
     <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
     <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">
       <span class="share-label">share</span>
@@ -62,9 +73,14 @@
     </button>
   </div>
 
-  <div id="hearing-panel" class="hearing-panel hidden">
-    <button class="hearing-close" aria-label="Close">×</button>
-    <div id="hearing-content"></div>
+  <div id="weather-panel" class="info-panel hidden">
+    <button class="panel-close" aria-label="Close">×</button>
+    <div id="weather-content"></div>
+  </div>
+
+  <div id="audio-panel" class="info-panel hidden">
+    <button class="panel-close" aria-label="Close">×</button>
+    <div id="audio-content"></div>
   </div>
 
   <div id="location-search" class="location-search hidden">

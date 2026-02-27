@@ -78,10 +78,36 @@ export function createControls(onLocationSelect) {
     return -180 + Math.random() * 360;
   }
 
+  // Rough continental bounding boxes for land-biased random location picks.
+  // ~80% of random picks land within these boxes, dramatically increasing the
+  // chance of resolving to a named place instead of open ocean.
+  const LAND_BOXES = [
+    { latMin: 25, latMax: 60, lngMin: -130, lngMax: -60 },   // North America
+    { latMin: -55, latMax: 12, lngMin: -82, lngMax: -34 },   // South America
+    { latMin: 36, latMax: 70, lngMin: -10, lngMax: 40 },     // Europe
+    { latMin: -35, latMax: 37, lngMin: -18, lngMax: 52 },    // Africa
+    { latMin: 10, latMax: 55, lngMin: 40, lngMax: 100 },     // West/Central Asia
+    { latMin: 20, latMax: 55, lngMin: 100, lngMax: 145 },    // East Asia + Japan/Korea
+    { latMin: -10, latMax: 20, lngMin: 95, lngMax: 140 },    // Southeast Asia + Indonesia
+    { latMin: -40, latMax: -10, lngMin: 113, lngMax: 154 },  // Australia
+    { latMin: 8, latMax: 35, lngMin: 68, lngMax: 90 },       // India subcontinent
+    { latMin: -85, latMax: -60, lngMin: -180, lngMax: 180 }, // Antarctica
+  ];
+
+  function randomLandBiasedPoint() {
+    if (Math.random() < 0.8) {
+      const box = LAND_BOXES[Math.floor(Math.random() * LAND_BOXES.length)];
+      return {
+        latitude: box.latMin + Math.random() * (box.latMax - box.latMin),
+        longitude: box.lngMin + Math.random() * (box.lngMax - box.lngMin),
+      };
+    }
+    return { latitude: randomLatitude(), longitude: randomLongitude() };
+  }
+
   async function pickRandomResolvableLocation(maxAttempts = 10) {
     for (let i = 0; i < maxAttempts; i += 1) {
-      const latitude = randomLatitude();
-      const longitude = randomLongitude();
+      const { latitude, longitude } = randomLandBiasedPoint();
       const name = await reverseGeocode(latitude, longitude);
       if (name && !isCoordinateFallbackName(name)) {
         return { latitude, longitude, name };
@@ -90,8 +116,7 @@ export function createControls(onLocationSelect) {
 
     // If reverse geocoding repeatedly fails to resolve a place name, still return
     // a random point so weather APIs continue to work globally.
-    const latitude = randomLatitude();
-    const longitude = randomLongitude();
+    const { latitude, longitude } = randomLandBiasedPoint();
     const name = await reverseGeocode(latitude, longitude);
     return {
       latitude,

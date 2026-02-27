@@ -5,7 +5,10 @@ import { mapWeatherToMusic } from './music/mapper.js';
 import { createInterpolator } from './music/interpolator.js';
 import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
 import { buildShareSearch, parseSharedCoordinates } from './weather/share.js';
-import { getMoonriseTime, getMoonsetTime } from './weather/moon.js';
+import { getMoonriseTime, getMoonsetTime, getMoonPhaseName } from './weather/moon.js';
+import { describeWeatherCode } from './weather/codes.js';
+import { getSeasonName } from './weather/season.js';
+import { degreesToCompass } from './ui/display.js';
 import { createWeatherFetcher } from './weather/fetcher.js';
 import { createTideFetcher } from './weather/tides.js';
 import { createAirQualityFetcher } from './weather/airquality.js';
@@ -255,8 +258,14 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
     interpolator = createInterpolator(engine);
     // New engine always starts playing — reset pause button accordingly
     isPlaying = true;
-    const pauseBtn = document.getElementById('pause-btn');
-    if (pauseBtn) { pauseBtn.textContent = '⏸'; pauseBtn.setAttribute('aria-label', 'pause'); }
+    const pb = document.getElementById('pause-btn');
+    if (pb) {
+      const pauseIcon = pb.querySelector('.pause-icon');
+      const playIcon = pb.querySelector('.play-icon');
+      pauseIcon?.classList.remove('hidden');
+      playIcon?.classList.add('hidden');
+      pb.setAttribute('aria-label', 'pause');
+    }
   }
 
   // Stop existing fetchers
@@ -352,17 +361,29 @@ async function boot(latitude, longitude, locationName) {
 
   // Wire pause/play button
   const pauseBtn = document.getElementById('pause-btn');
+
+  function setPauseButtonState(playing) {
+    const pauseIcon = pauseBtn.querySelector('.pause-icon');
+    const playIcon = pauseBtn.querySelector('.play-icon');
+    if (playing) {
+      pauseIcon?.classList.remove('hidden');
+      playIcon?.classList.add('hidden');
+      pauseBtn.setAttribute('aria-label', 'pause');
+    } else {
+      pauseIcon?.classList.add('hidden');
+      playIcon?.classList.remove('hidden');
+      pauseBtn.setAttribute('aria-label', 'play');
+    }
+  }
+
   pauseBtn.addEventListener('click', () => {
     if (isPlaying) {
       engine.stop();
-      pauseBtn.textContent = '▶';
-      pauseBtn.setAttribute('aria-label', 'play');
     } else {
       engine.resume();
-      pauseBtn.textContent = '⏸';
-      pauseBtn.setAttribute('aria-label', 'pause');
     }
     isPlaying = !isPlaying;
+    setPauseButtonState(isPlaying);
   });
 
   // Wire master volume slider
@@ -431,8 +452,7 @@ async function boot(latitude, longitude, locationName) {
           if (engine) engine.stop();
           if (engine) engine.setSleepGainScale(1, 0);
           isPlaying = false;
-          const pauseBtn = document.getElementById('pause-btn');
-          if (pauseBtn) { pauseBtn.textContent = '▶'; pauseBtn.setAttribute('aria-label', 'play'); }
+          setPauseButtonState(false);
           sleepIndex = 0;
           sleepBtn.textContent = 'sleep';
         }, 60_000);
@@ -452,7 +472,10 @@ async function boot(latitude, longitude, locationName) {
   const mutedVoices = new Set();
 
   if (mixBtn && mutePanel) {
-    mixBtn.addEventListener('click', () => mutePanel.classList.toggle('hidden'));
+    mixBtn.addEventListener('click', () => {
+      mutePanel.classList.toggle('hidden');
+      document.body.classList.toggle('mix-open', !mutePanel.classList.contains('hidden'));
+    });
   }
 
   document.querySelectorAll('.mute-btn').forEach(btn => {
@@ -474,49 +497,139 @@ async function boot(latitude, longitude, locationName) {
     });
   });
 
-  // Wire "What am I hearing" overlay
-  const infoBtn = document.getElementById('info-btn');
-  const hearingPanel = document.getElementById('hearing-panel');
-  const hearingContent = document.getElementById('hearing-content');
-  const hearingClose = hearingPanel?.querySelector('.hearing-close');
-  let toggleHearingPanel = null;
+  // ── Weather panel (W key) ──
+  const weatherPanel = document.getElementById('weather-panel');
+  const weatherContent = document.getElementById('weather-content');
+  const weatherClose = weatherPanel?.querySelector('.panel-close');
+  const weatherMenuBtn = document.getElementById('weather-btn');
 
-  function describeWeatherCategory(cat) {
-    return { storm: 'Stormy', rain: 'Rainy', drizzle: 'Drizzling',
-      fog: 'Foggy', snow: 'Snowing', cloudy: 'Cloudy', clear: 'Clear skies' }[cat] ?? cat;
-  }
+  // ── Audio panel (A key) ──
+  const audioPanel = document.getElementById('audio-panel');
+  const audioContent = document.getElementById('audio-content');
+  const audioClose = audioPanel?.querySelector('.panel-close');
+  const audioMenuBtn = document.getElementById('audio-btn');
 
   function capitalizeFirst(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
-  function buildHearingText() {
-    const p = interpolator?.currentParams;
-    if (!p) return 'Loading…';
-    const chord = engine?.progressionPlayer?.currentChord;
-    const chordStr = chord ? `${chord.chordRootName} ${chord.quality}` : '—';
-    const velScale = p.globalVelocityScale ?? 1;
-    const timeStr = velScale > 0.8 ? 'Daytime' : velScale > 0.5 ? 'Golden hour' : 'Night';
-    return [
-      `<strong>Key:</strong> ${p.rootNote} ${capitalizeFirst(p.scaleType)}`,
-      `<strong>Mood:</strong> ${capitalizeFirst(p.melodyMood ?? p.weatherCategory)}`,
-      `<strong>Tempo:</strong> ${p.bpm} BPM`,
-      `<strong>Chord:</strong> ${chordStr}`,
-      `<strong>Weather:</strong> ${describeWeatherCategory(p.weatherCategory)}`,
-      `<strong>Time:</strong> ${timeStr}`,
-    ].join('<br>');
+  function describeWeatherCategory(cat) {
+    return { storm: 'Stormy', rain: 'Rainy', drizzle: 'Drizzling',
+      fog: 'Foggy', snow: 'Snowing', cloudy: 'Cloudy', clear: 'Clear skies' }[cat] ?? cat;
   }
 
-  if (infoBtn && hearingPanel && hearingContent) {
-    toggleHearingPanel = () => {
-      hearingContent.innerHTML = buildHearingText();
-      hearingPanel.classList.toggle('hidden');
-    };
-    infoBtn.addEventListener('click', toggleHearingPanel);
+  /**
+   * Format a Date as location-local time using a UTC offset.
+   */
+  function formatLocalTime(date, utcOffsetSeconds) {
+    if (!date) return '\u2014';
+    const localMs = date.getTime() + utcOffsetSeconds * 1000;
+    const d = new Date(localMs);
+    const h = d.getUTCHours() % 12 || 12;
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    const period = d.getUTCHours() >= 12 ? 'PM' : 'AM';
+    return `${h}:${m} ${period}`;
   }
-  if (hearingClose) {
-    hearingClose.addEventListener('click', () => hearingPanel.classList.add('hidden'));
+
+  function buildWeatherText() {
+    const w = weatherFetcher?.lastState;
+    if (!w) return 'Loading\u2026';
+
+    const tempF = Math.round(w.temperature * 9 / 5 + 32);
+    const feelsF = Math.round((w.apparentTemperature ?? w.temperature) * 9 / 5 + 32);
+    const condition = describeWeatherCode(w.weatherCode);
+    const windDir = degreesToCompass(w.windDirection);
+    const moonName = getMoonPhaseName();
+    const season = capitalizeFirst(getSeasonName(new Date(), currentLatitude ?? 40));
+
+    const lines = [
+      `<strong>Temperature:</strong> ${tempF}\u00B0F (feels ${feelsF}\u00B0F)`,
+      `<strong>Condition:</strong> ${condition}`,
+      `<strong>Humidity:</strong> ${w.humidity}%`,
+      `<strong>Wind:</strong> ${Math.round(w.windSpeed)} km/h ${windDir}`,
+      `<strong>Pressure:</strong> ${Math.round(w.pressure)} hPa`,
+      `<strong>Cloud Cover:</strong> ${w.cloudCover}%`,
+    ];
+
+    if (w.uvIndex != null && w.uvIndex > 0) {
+      lines.push(`<strong>UV Index:</strong> ${w.uvIndex.toFixed(0)}`);
+    }
+    if (currentAqiData?.aqi != null) {
+      lines.push(`<strong>AQI:</strong> ${currentAqiData.aqi}`);
+    }
+
+    const utcOff = w.utcOffsetSeconds ?? 0;
+    lines.push(`<strong>Sunrise:</strong> ${formatLocalTime(w.sunrise, utcOff)}`);
+    lines.push(`<strong>Sunset:</strong> ${formatLocalTime(w.sunset, utcOff)}`);
+    lines.push(`<strong>Moon:</strong> ${moonName}`);
+    lines.push(`<strong>Season:</strong> ${season}`);
+    lines.push(`<strong>Biome:</strong> ${capitalizeFirst(currentBiome)}`);
+
+    if (currentTideData) {
+      lines.push(`<strong>Tide:</strong> ${currentTideData.waterLevel.toFixed(1)} ft`);
+    }
+
+    return lines.join('<br>');
+  }
+
+  function buildAudioText() {
+    const p = interpolator?.currentParams;
+    const w = weatherFetcher?.lastState;
+    if (!p || !w) return 'Loading\u2026';
+
+    const tempF = Math.round(w.temperature * 9 / 5 + 32);
+    const chord = engine?.progressionPlayer?.currentChord;
+    const chordStr = chord ? `${chord.chordRootName} ${chord.quality}` : '\u2014';
+    const moonName = getMoonPhaseName();
+    const velScale = p.globalVelocityScale ?? 1;
+    const timeStr = velScale > 0.8 ? 'Daytime' : velScale > 0.5 ? 'Golden hour' : 'Night';
+
+    const lines = [
+      `<strong>${tempF}\u00B0F</strong> <span class="mapping-hint">\u2192</span> <strong>${p.rootNote} ${capitalizeFirst(p.scaleType)}</strong>`,
+      `<strong>${tempF}\u00B0F</strong> <span class="mapping-hint">\u2192</span> ${p.bpm} BPM`,
+      `<strong>${capitalizeFirst(p.weatherCategory)}</strong> <span class="mapping-hint">\u2192</span> ${capitalizeFirst(p.melodyMood)} mood`,
+      `<strong>Chord:</strong> ${chordStr}`,
+      '',
+      `<strong>${w.humidity}% humidity</strong> <span class="mapping-hint">\u2192</span> ${p.reverbDecay.toFixed(1)}s reverb, ${(p.reverbWet * 100).toFixed(0)}% wet`,
+      `<strong>${Math.round(w.pressure)} hPa</strong> <span class="mapping-hint">\u2192</span> bass cutoff ${p.bassCutoff.toFixed(0)} Hz`,
+      `<strong>${Math.round(w.windSpeed)} km/h wind</strong> <span class="mapping-hint">\u2192</span> ${(p.rhythmDensity * 100).toFixed(0)}% rhythm density`,
+      `<strong>${timeStr}</strong> <span class="mapping-hint">\u2192</span> ${(p.padBrightness * 100).toFixed(0)}% brightness`,
+      `<strong>${moonName}</strong> <span class="mapping-hint">\u2192</span> LFO ${p.lfoRate.toFixed(2)} Hz`,
+    ];
+
+    if (w.uvIndex > 0) {
+      lines.push(`<strong>UV ${w.uvIndex.toFixed(0)}</strong> <span class="mapping-hint">\u2192</span> arp shimmer ${p.arpeggioFilterCutoff.toFixed(0)} Hz`);
+    }
+
+    return lines.filter(l => l !== undefined).join('<br>');
+  }
+
+  let toggleWeatherPanel = null;
+  let toggleAudioPanel = null;
+
+  if (weatherPanel && weatherContent) {
+    toggleWeatherPanel = () => {
+      audioPanel?.classList.add('hidden');
+      weatherContent.innerHTML = buildWeatherText();
+      weatherPanel.classList.toggle('hidden');
+    };
+    weatherMenuBtn?.addEventListener('click', toggleWeatherPanel);
+  }
+  if (weatherClose) {
+    weatherClose.addEventListener('click', () => weatherPanel.classList.add('hidden'));
+  }
+
+  if (audioPanel && audioContent) {
+    toggleAudioPanel = () => {
+      weatherPanel?.classList.add('hidden');
+      audioContent.innerHTML = buildAudioText();
+      audioPanel.classList.toggle('hidden');
+    };
+    audioMenuBtn?.addEventListener('click', toggleAudioPanel);
+  }
+  if (audioClose) {
+    audioClose.addEventListener('click', () => audioPanel.classList.add('hidden'));
   }
 
   // Wire share button — copies current location permalink to clipboard
@@ -565,18 +678,21 @@ async function boot(latitude, longitude, locationName) {
         break;
       case 'Escape':
         secondaryMenuController?.close();
+        weatherPanel?.classList.add('hidden');
+        audioPanel?.classList.add('hidden');
         break;
       case 'l': case 'L':
+        e.preventDefault();
         document.getElementById('location-btn')?.click();
         break;
       case 'm': case 'M':
         mixBtn?.click();
         break;
-      case '?':
-        toggleHearingPanel?.();
+      case 'w': case 'W':
+        toggleWeatherPanel?.();
         break;
-      case '/':
-        if (e.shiftKey) toggleHearingPanel?.();
+      case 'a': case 'A':
+        toggleAudioPanel?.();
         break;
       case 'f': case 'F':
         canvas.requestFullscreen?.();

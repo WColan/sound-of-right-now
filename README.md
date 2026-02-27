@@ -2,7 +2,7 @@
 
 A generative ambient music web app that sonifies live weather and environmental conditions. Every location sounds different, every hour sounds different, and the music evolves continuously without repeating.
 
-Open the app, share your location (or search for any city), and listen to the weather.
+Open the app, share your location (or search for any city, or try a random location), and listen to the weather.
 
 ## How It Works
 
@@ -110,21 +110,24 @@ The full-screen canvas visualizer is weather/audio reactive and currently includ
 
 UI controls include:
 
-- Play/pause
+- Play/pause (SVG icons)
 - Master volume slider (persisted)
-- Change location search
-- Mix panel (per-voice mute toggles)
-- "What am I hearing?" contextual panel
+- Change location search (centered modal on mobile)
+- Mix panel (per-voice mute toggles; pushes content up on mobile)
+- Weather detail panel (temperature, conditions, humidity, wind, pressure, cloud cover, UV, AQI, sunrise/sunset, moon phase, season, biome, tide)
+- Audio mappings panel (source → output: e.g., "72°F → D Minor", "78% humidity → 6.2s reverb")
 - Sleep timer (off/30/60/90 with 60s fade-out)
 - Share link (lat/lng permalink copy)
+- Info display: location + local time + curated blend line (temp, condition, key, BPM)
 
 Keyboard shortcuts:
 
 - `Space`: play/pause
-- `L`: open location search
-- `M`: open/close mix panel
-- `?`: open/close "What am I hearing?"
-- `Escape`: close action menu
+- `L`: toggle location search
+- `M`: toggle mix panel
+- `W`: toggle weather panel
+- `A`: toggle audio mappings panel
+- `Escape`: close menus and panels
 - `F`: request fullscreen
 
 ## Data Sources
