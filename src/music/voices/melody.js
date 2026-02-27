@@ -229,6 +229,22 @@ export function createMelodyVoice() {
       });
     },
 
+    /**
+     * Apply a seasonal envelope palette — adjusts attack/release to shape
+     * the melody's phrasing feel across seasons. Winter phrases are spare
+     * and crystalline; summer phrases bloom gently.
+     */
+    setSeasonalPalette(season) {
+      const palettes = {
+        winter: { attack: 0.05, release: 1.5 },
+        spring: { attack: 0.08, release: 1.8 },
+        summer: { attack: 0.15, release: 2.5 },
+        autumn: { attack: 0.10, release: 1.8 },
+      };
+      const p = palettes[season] || palettes.summer;
+      synth.set({ envelope: { attack: p.attack, release: p.release } });
+    },
+
     stop() {
       clearPhraseEvents();
       synth.triggerRelease();

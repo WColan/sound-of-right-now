@@ -1,6 +1,6 @@
 import { categorizeWeatherCode } from '../weather/codes.js';
 import { getMoonPhase, getMoonFullness } from '../weather/moon.js';
-import { getSeasonalFactor } from '../weather/season.js';
+import { getSeasonalFactor, getSeasonName } from '../weather/season.js';
 import { MODE_SPECTRUM } from './scale.js';
 import { CATEGORY_TO_MOOD } from './constants.js';
 
@@ -29,6 +29,7 @@ export function mapWeatherToMusic(weather, options = {}) {
 
   // ── Seasonal awareness ──
   const seasonalFactor = getSeasonalFactor(now, options.latitude ?? 40);
+  const seasonName = getSeasonName(now, options.latitude ?? 40);
 
   // Temperature → mode + tempo + root
   // Harmonic mode/root use apparent temperature (feels-like) — wind chill and heat index
@@ -114,7 +115,7 @@ export function mapWeatherToMusic(weather, options = {}) {
   // Gusty winds create a shimmery, unstable feel — audible as wider oscillator detune.
   const basePadSpread = palette.padSpread ?? 15;
   const windPadBoost = lerp(0, 8, windNorm); // up to +8 cents in strong wind
-  const padSpread = clamp(basePadSpread + windPadBoost, 8, 38);
+  let padSpread = clamp(basePadSpread + windPadBoost, 8, 38);
   const textureVolume = palette.textureVolume;
   const noiseType = palette.noiseType;
   const percussionVolume = palette.percussionVolume || -24;
@@ -145,6 +146,22 @@ export function mapWeatherToMusic(weather, options = {}) {
     reverbWet = Math.min(0.85, reverbWet + aqiNorm * 0.2);
     reverbDecay = Math.min(15, reverbDecay + aqiNorm * 3);
   }
+
+  // ── Seasonal instrument palette ──
+  // Multiplicative modifiers on reverb + chorus; additive brightness floor.
+  const sPal = SEASONAL_PALETTES[seasonName] || SEASONAL_PALETTES.summer;
+  reverbDecay = clamp(reverbDecay * sPal.reverbDecayMod, 1.5, 15);
+  reverbWet = clamp(reverbWet * sPal.reverbWetMod, 0.1, 0.85);
+  finalChorusDepth = clamp(finalChorusDepth * sPal.chorusWetMod, 0.05, 1);
+  finalPadBrightness = Math.max(sPal.brightnessFloor, finalPadBrightness);
+
+  // ── Biome timbre modulation ──
+  // Shifts reverb, master filter, and pad spread based on terrain type.
+  const biomeId = options.biome ?? 'grassland';
+  const bt = BIOME_TIMBRES[biomeId] || BIOME_TIMBRES.grassland;
+  reverbWet = clamp(reverbWet + bt.reverbWetAdd, 0.1, 0.85);
+  masterFilterCutoff = clamp(masterFilterCutoff + bt.filterShift, 1000, 14000);
+  padSpread = clamp(padSpread + bt.spreadMod, 8, 38);
 
   // ── UV index shimmer ──
   const uvNorm = clamp((weather.uvIndex ?? 0) / 11, 0, 1);
@@ -233,6 +250,11 @@ export function mapWeatherToMusic(weather, options = {}) {
   const melodyBaseVolume = lerp(-22, -12, timeOfDay.brightness);
   const melodyVolume = melodyBaseVolume + (palette.melodyVolumeOffset || 0);
 
+  // ── Choir volume ──
+  // The formant choir is driven by humidity (moist air = fuller, more present voice)
+  // and moonfulness (full moon brings the choir forward in the mix).
+  const choirVolume = lerp(-24, -12, clamp(humNorm * 0.5 + moonFullness * 0.5, 0, 1));
+
   // ── Binaural panning ──
   const arpeggioPan = -percussionPan * 0.4;
   // Melody slowly orbits left/right over ~1 minute. Moon fullness widens the
@@ -252,6 +274,7 @@ export function mapWeatherToMusic(weather, options = {}) {
     percussionVolume,
     droneVolume,
     melodyVolume,
+    choirVolume,
     padBrightness: finalPadBrightness,
     padSpread,
     bassCutoff,
@@ -289,6 +312,7 @@ export function mapWeatherToMusic(weather, options = {}) {
     // Wind chime
     windChimeVolume,
     timbreProfile,
+    seasonalPalette: seasonName,
     // Progression-driving params
     weatherCategory: category,
     pressureNorm: pressNorm,
@@ -305,6 +329,8 @@ export function mapWeatherToMusic(weather, options = {}) {
       filterWarmth,
       aqiNorm,
       seasonalFactor,
+      seasonName,
+      biome: biomeId,
     },
   };
 }
@@ -382,16 +408,16 @@ const WEATHER_PALETTES = {
     padSpread: 10,
     textureVolume: -40,
     noiseType: null,
-    padVolume: -14,
-    percussionVolume: -26,
+    padVolume: -16,
+    percussionVolume: -22,
     melodyVolumeOffset: 0,
   },
   cloudy: {
     padSpread: 18,
     textureVolume: -32,
     noiseType: null,
-    padVolume: -13,
-    percussionVolume: -24,
+    padVolume: -15,
+    percussionVolume: -21,
     melodyVolumeOffset: -2,
   },
   fog: {
@@ -399,24 +425,24 @@ const WEATHER_PALETTES = {
     textureVolume: -22,
     noiseType: 'pink',
     textureFilterCutoff: 600,
-    padVolume: -12,
-    percussionVolume: -28,
+    padVolume: -14,
+    percussionVolume: -24,
     melodyVolumeOffset: -6,
   },
   drizzle: {
     padSpread: 18,
     textureVolume: -24,
     noiseType: 'pink',
-    padVolume: -13,
-    percussionVolume: -24,
+    padVolume: -15,
+    percussionVolume: -20,
     melodyVolumeOffset: -2,
   },
   rain: {
     padSpread: 22,
     textureVolume: -16,
     noiseType: 'pink',
-    padVolume: -13,
-    percussionVolume: -22,
+    padVolume: -15,
+    percussionVolume: -19,
     melodyVolumeOffset: -3,
   },
   snow: {
@@ -424,17 +450,62 @@ const WEATHER_PALETTES = {
     textureVolume: -20,
     noiseType: 'white',
     textureFilterCutoff: 800,
-    padVolume: -12,
-    percussionVolume: -28,
+    padVolume: -14,
+    percussionVolume: -24,
     melodyVolumeOffset: -4,
   },
   storm: {
     padSpread: 30,
     textureVolume: -10,
     noiseType: 'brown',
-    padVolume: -11,
-    percussionVolume: -16,
+    padVolume: -13,
+    percussionVolume: -14,
     melodyVolumeOffset: -2,
+  },
+};
+
+// --- Biome Timbre Modifiers ---
+// Each biome applies additive/multiplicative adjustments to reverb, filter, and spread.
+// These are post-processed in mapWeatherToMusic() after weather-driven calculations.
+const BIOME_TIMBRES = {
+  coastal:   { reverbWetAdd: 0.15, filterShift: 500,   spreadMod: 3  },
+  desert:    { reverbWetAdd: -0.1, filterShift: -800,  spreadMod: -5 },
+  forest:    { reverbWetAdd: 0.08, filterShift: -300,  spreadMod: 2  },
+  mountain:  { reverbWetAdd: 0.25, filterShift: 1000,  spreadMod: 5  },
+  urban:     { reverbWetAdd: -0.05, filterShift: -200, spreadMod: -3 },
+  grassland: { reverbWetAdd: 0,    filterShift: 0,     spreadMod: 0  },
+  arctic:    { reverbWetAdd: 0.2,  filterShift: -500,  spreadMod: -8 },
+  wetland:   { reverbWetAdd: 0.12, filterShift: -400,  spreadMod: 4  },
+  tropical:  { reverbWetAdd: 0.05, filterShift: 600,   spreadMod: 6  },
+};
+
+// --- Seasonal Instrument Palettes ---
+// Each season modulates reverb, chorus, and brightness as multiplicative/additive
+// adjustments on top of the weather-driven base. Applied in mapWeatherToMusic().
+const SEASONAL_PALETTES = {
+  winter: {
+    reverbDecayMod: 1.3,    // Longer tails — icy reflections
+    reverbWetMod: 1.1,
+    chorusWetMod: 0.7,      // Less chorus — crystalline clarity
+    brightnessFloor: 0.08,  // Allow very dark
+  },
+  spring: {
+    reverbDecayMod: 0.9,    // Shorter, crisper
+    reverbWetMod: 0.95,
+    chorusWetMod: 1.0,
+    brightnessFloor: 0.2,   // Brighter minimum
+  },
+  summer: {
+    reverbDecayMod: 1.0,
+    reverbWetMod: 1.0,
+    chorusWetMod: 1.2,      // Lush, wide chorus
+    brightnessFloor: 0.2,
+  },
+  autumn: {
+    reverbDecayMod: 1.15,   // Slightly longer — muted decay
+    reverbWetMod: 1.05,
+    chorusWetMod: 0.85,     // Narrower
+    brightnessFloor: 0.12,
   },
 };
 

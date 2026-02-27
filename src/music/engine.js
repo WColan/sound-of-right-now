@@ -7,6 +7,7 @@ import { createPercussionVoice } from './voices/percussion.js';
 import { createDroneVoice } from './voices/drone.js';
 import { createMelodyVoice } from './voices/melody.js';
 import { createWindChimeVoice } from './voices/windchime.js';
+import { createChoirVoice } from './voices/choir.js';
 import { voiceLead } from './scale.js';
 import { clampPan, createSpatialNode, widthToZ } from './spatial.js';
 import {
@@ -101,6 +102,34 @@ export function createSoundEngine() {
 
   const analyser = new Tone.Analyser('fft', 256);
   const waveformAnalyser = new Tone.Analyser('waveform', 256);
+  const createOptionalMeter = () => {
+    let MeterCtor = null;
+    try {
+      MeterCtor = Tone.Meter;
+    } catch {
+      return null;
+    }
+    if (typeof MeterCtor !== 'function') return null;
+    try {
+      return new MeterCtor();
+    } catch {
+      return null;
+    }
+  };
+  const voiceMeters = {
+    pad: createOptionalMeter(),
+    choir: createOptionalMeter(),
+    percussion: createOptionalMeter(),
+  };
+  const tapMeter = (source, meter) => {
+    if (!meter || typeof source?.connect !== 'function') return;
+    source.connect(meter);
+  };
+  const readMeterDb = (meter) => {
+    const value = meter?.getValue?.();
+    const sample = Array.isArray(value) ? Math.max(...value) : value;
+    return Number.isFinite(sample) ? sample : null;
+  };
 
   // Chain shared effects: chorus -> delay -> reverb -> master filter -> velocity -> limiter -> analysers -> destination
   chorus.connect(delay);
@@ -141,11 +170,19 @@ export function createSoundEngine() {
   const drone = createDroneVoice();
   const melody = createMelodyVoice();
   const windChime = createWindChimeVoice();
+  const choir = createChoirVoice();
 
   // Wind chime keeps its own path to reverb but now through a spatial node.
   const windChimePanner = createSpatialNode(Tone, {
     pan: 0.15,
     z: -0.58,
+    range: spatialXRange,
+  });
+
+  // Choir spatial panner — centered, positioned behind the pad for depth
+  const choirPanner = createSpatialNode(Tone, {
+    pan: 0,
+    z: -1.15,
     range: spatialXRange,
   });
 
@@ -206,6 +243,7 @@ export function createSoundEngine() {
 
   // Connect voices -> spatial nodes -> wideners/chorus bus
   pad.output.connect(padHPF);
+  tapMeter(pad.output, voiceMeters.pad);
   padHPF.connect(padPanner.node);
   padPanner.node.connect(milkyWayTremolo);
   milkyWayTremolo.connect(chorus);
@@ -229,6 +267,11 @@ export function createSoundEngine() {
   melodyPanner.node.connect(melodyWidener);
   melodyWidener.connect(chorus);
 
+  // Choir → spatial panner → chorus (same main effects chain as pad/arpeggio/melody)
+  choir.output.connect(choirPanner.node);
+  tapMeter(choir.output, voiceMeters.choir);
+  choirPanner.node.connect(chorus);
+
   // Wind chime connects directly to reverb (no chorus/delay smear).
   windChime.output.connect(windChimePanner.node);
   windChimePanner.node.connect(reverb);
@@ -237,6 +280,7 @@ export function createSoundEngine() {
   percussionReverb.connect(percussionPanner.node);
   percussionPanner.node.connect(masterVelocity);
   percussion.output.connect(percussionReverb);
+  tapMeter(percussion.output, voiceMeters.percussion);
 
   // Track current musical state
   let currentRoot = null;
@@ -247,6 +291,7 @@ export function createSoundEngine() {
   let lastBassNote = null;         // Needed for resume() re-attack
   let lastDroneRootName = null;    // Needed for resume() re-attack
   let windChimeWasActive = false;  // Needed for resume() re-activation
+  let lastChoirVoicing = null;    // Needed for resume() re-attack
   let lastMelodyChordTones = null; // Needed for resume() melody context restore
   let lastMelodyScaleTones = null;
 
@@ -373,6 +418,14 @@ export function createSoundEngine() {
         moonFullness: currentMoonFullness,
       });
 
+      // Choir — sustain chord notes dropped one octave
+      lastChoirVoicing = chord.notes; // choir.playChord handles octave drop internally
+      if (index === 0 && total > 0) {
+        choir.playChord(chord.notes);
+      } else {
+        choir.changeChord(chord.notes);
+      }
+
       // Percussion accent on chord change
       percussion.triggerChordAccent();
 
@@ -417,9 +470,17 @@ export function createSoundEngine() {
     // Expose for visualization
     analyser,
     waveformAnalyser,
+    voiceMeters,
+    getVoiceLevels() {
+      return {
+        pad: readMeterDb(voiceMeters.pad),
+        choir: readMeterDb(voiceMeters.choir),
+        percussion: readMeterDb(voiceMeters.percussion),
+      };
+    },
 
     // Expose voices for direct control if needed
-    voices: { pad, arpeggio, bass, texture, percussion, drone, melody, windChime },
+    voices: { pad, arpeggio, bass, texture, percussion, drone, melody, windChime, choir },
 
     // Expose effects for direct control
     effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain, percussionReverb, arpeggioWidener, melodyWidener, padHPF },
@@ -434,6 +495,7 @@ export function createSoundEngine() {
       melodyPanner: melodyPanner.node,
       percussionPanner: percussionPanner.node,
       windChimePanner: windChimePanner.node,
+      choirPanner: choirPanner.node,
     },
 
     spatial: {
@@ -475,6 +537,20 @@ export function createSoundEngine() {
       milkyWayTremolo.frequency.rampTo(0.8 + i * 1.2, 12); // 0.8–2 Hz
       // Gentle chorus boost on top of the weather baseline
       chorus.wet.rampTo(Math.min(0.55, 0.2 + i * 0.12), 10);
+    },
+
+    /**
+     * Ramp the aurora shimmer effect — boosts choir formant resonance during
+     * northern lights. Higher Q makes the formant filters ring more, creating
+     * an ethereal, singing quality that pairs with the visual aurora curtains.
+     *
+     * @param {number} intensity - 0 (no effect) to 1 (full aurora)
+     */
+    updateAuroraShimmer(intensity) {
+      const i = Math.max(0, Math.min(1, intensity));
+      // Boost formant Q: baseline ~6, aurora boosts up to 12
+      const q = 6 + i * 6;
+      choir.setFormantQ(q);
     },
 
     /**
@@ -584,8 +660,8 @@ export function createSoundEngine() {
       // setting up the pad, arpeggio, bass, drone, and melody with the first chord.
 
       // Pad volume & brightness (initial chord set by progression player)
-      pad.synthA.volume.value = padVolume ?? -14;
-      pad.synthB.volume.value = padVolume ?? -14;
+      pad.synthA.volume.value = padVolume ?? -16;
+      pad.synthB.volume.value = padVolume ?? -16;
       pad.filter.frequency.value = padBrightness != null ? padBrightness * 8000 + 200 : 3000;
       if (padSpread != null) pad.setSpread(padSpread);
 
@@ -619,8 +695,8 @@ export function createSoundEngine() {
       percussion.setDensity(rhythmDensity ?? 0.2);
       percussion.panner.pan.value = percussionPan ?? 0;
       setSpatialPan(percussionPanner, (percussionPan ?? 0) * 0.75, 0);
-      percussion.membrane.volume.value = percussionVolume ?? -22;
-      percussion.metal.volume.value = (percussionVolume ?? -22) - 4;
+      percussion.membrane.volume.value = percussionVolume ?? -20;
+      percussion.metal.volume.value = (percussionVolume ?? -20) - 4;
       percussion.start();
 
       // Drone (note set by progression player via onChordChange)
@@ -635,11 +711,16 @@ export function createSoundEngine() {
       }
       melody.synth.volume.value = melodyVolume ?? -20;
 
+      // Choir — formant-filtered sustained chords
+      choir.setVolume(params.choirVolume ?? -18, 0);
+      if (melodyMood) choir.setMood(melodyMood);
+
       // Timbre profile — oscillator type + envelope character across voices
       if (params.timbreProfile) {
         pad.setTimbreProfile(params.timbreProfile);
         arpeggio.setTimbreProfile(params.timbreProfile);
         melody.setTimbreProfile(params.timbreProfile);
+        choir.setTimbreProfile(params.timbreProfile);
       }
 
       // Effects
@@ -680,6 +761,7 @@ export function createSoundEngine() {
         case 'percussionVolume': percussion.setVolume(value, duration); break;
         case 'droneVolume': drone.setVolume(value, duration); break;
         case 'melodyVolume': melody.setVolume(value, duration); break;
+        case 'choirVolume': choir.setVolume(value, duration); break;
 
         // Filters
         case 'padBrightness': pad.setFilterCutoff(value * 8000 + 200, duration); break;
@@ -830,6 +912,14 @@ export function createSoundEngine() {
           pad.setTimbreProfile(value);
           arpeggio.setTimbreProfile(value);
           melody.setTimbreProfile(value);
+          choir.setTimbreProfile(value);
+          break;
+
+        case 'seasonalPalette':
+          pad.setSeasonalPalette(value);
+          arpeggio.setSeasonalPalette(value);
+          melody.setSeasonalPalette(value);
+          choir.setSeasonalPalette(value);
           break;
 
         default: break;
@@ -844,6 +934,7 @@ export function createSoundEngine() {
       percussion.stop();
       drone.stop();
       melody.stop();
+      choir.stop();
       windChime.setActive(false);
       progressionPlayer.pause();
       // pause() preserves Transport clock position so resume() continues mid-phrase.
@@ -879,6 +970,11 @@ export function createSoundEngine() {
         melody.setChordContext(lastMelodyChordTones, lastMelodyScaleTones);
       }
 
+      // Re-attack choir with last voicing
+      if (lastChoirVoicing && lastChoirVoicing.length > 0) {
+        choir.playChord(lastChoirVoicing);
+      }
+
       // Restart looping voices and the Transport clock
       arpeggio.start();
       texture.start();
@@ -898,6 +994,7 @@ export function createSoundEngine() {
       percussion.dispose();
       drone.dispose();
       melody.dispose();
+      choir.dispose();
       windChime.dispose();
       progressionPlayer.dispose();
       // Spatial panners
@@ -909,6 +1006,7 @@ export function createSoundEngine() {
       melodyPanner.node.dispose();
       percussionPanner.node.dispose();
       windChimePanner.node.dispose();
+      choirPanner.node.dispose();
       // Effects
       chorus.dispose();
       delay.dispose();
@@ -918,6 +1016,7 @@ export function createSoundEngine() {
       limiter.dispose();
       analyser.dispose();
       waveformAnalyser.dispose();
+      Object.values(voiceMeters).forEach((meter) => meter?.dispose?.());
       // Sub-bass bus
       subBus.dispose();
       subLowpass.dispose();

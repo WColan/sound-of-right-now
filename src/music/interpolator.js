@@ -16,6 +16,7 @@ const RAMP_DURATIONS = {
   percussionVolume: 3,
   droneVolume: 8,
   melodyVolume: 8,
+  choirVolume: 10,
 
   // Filters (medium)
   padBrightness: 15,
@@ -87,6 +88,7 @@ const DISCRETE_PARAMS = new Set([
   'arpeggioRhythmPattern',
   'percussionPattern',
   'melodyMood',
+  'seasonalPalette',
 ]);
 
 // These are metadata, not engine params

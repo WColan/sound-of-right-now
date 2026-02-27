@@ -216,6 +216,22 @@ export function createArpeggioVoice() {
       });
     },
 
+    /**
+     * Apply a seasonal envelope palette — adjusts attack/release to give each
+     * season a distinct pluck character. Winter is crystalline (short, clean),
+     * summer is lush (longer tail), etc.
+     */
+    setSeasonalPalette(season) {
+      const palettes = {
+        winter: { attack: 0.02, release: 0.7  },
+        spring: { attack: 0.03, release: 1.0  },
+        summer: { attack: 0.06, release: 1.8  },
+        autumn: { attack: 0.04, release: 1.0  },
+      };
+      const p = palettes[season] || palettes.summer;
+      synth.set({ envelope: { attack: p.attack, release: p.release } });
+    },
+
     dispose() {
       this.stop();
       if (sequence) sequence.dispose();

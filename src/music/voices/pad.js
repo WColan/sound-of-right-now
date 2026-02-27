@@ -58,7 +58,7 @@ export function createPadVoice() {
   let currentNotes = [];
 
   // Master volume applied to both
-  const masterVolume = -14;
+  const masterVolume = -16;
   synthA.volume.value = masterVolume;
   synthB.volume.value = masterVolume;
 
@@ -182,6 +182,23 @@ export function createPadVoice() {
       };
       synthA.set(opts);
       synthB.set(opts);
+    },
+
+    /**
+     * Apply a seasonal envelope palette — layered on top of the weather timbre.
+     * Adjusts attack/release timing and oscillator spread to give each season
+     * a distinct feel: crystalline winter, airy spring, warm summer, muted autumn.
+     */
+    setSeasonalPalette(season) {
+      const palettes = {
+        winter: { attack: 5,   release: 12, spread: 0  },
+        spring: { attack: 1.5, release: 6,  spread: 10 },
+        summer: { attack: 3.5, release: 10, spread: 20 },
+        autumn: { attack: 2.5, release: 7,  spread: 5  },
+      };
+      const p = palettes[season] || palettes.summer;
+      synthA.set({ envelope: { attack: p.attack, release: p.release }, oscillator: { spread: p.spread } });
+      synthB.set({ envelope: { attack: p.attack, release: p.release }, oscillator: { spread: p.spread } });
     },
 
     stop() {

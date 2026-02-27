@@ -191,6 +191,7 @@ vi.mock('./voices/pad.js', () => ({
       setFilterCutoff() {},
       setVolume() {},
       setTimbreProfile() {},
+      setSeasonalPalette() {},
       playChord() {},
       changeChord() {},
       stop() {},
@@ -210,6 +211,7 @@ vi.mock('./voices/arpeggio.js', () => ({
       setVolume() {},
       setFilterCutoff() {},
       setTimbreProfile() {},
+      setSeasonalPalette() {},
       setChordContext() {},
       start() {},
       stop() {},
@@ -304,6 +306,7 @@ vi.mock('./voices/melody.js', () => ({
       setMood() {},
       setVolume() {},
       setTimbreProfile() {},
+      setSeasonalPalette() {},
       setChordContext() {},
       onChordChange() {},
       stop() {},
@@ -319,6 +322,28 @@ vi.mock('./voices/windchime.js', () => ({
       setNotes() {},
       setWindSpeed() {},
       setActive() {},
+      dispose() {},
+    };
+  },
+}));
+
+vi.mock('./voices/choir.js', () => ({
+  createChoirVoice() {
+    return {
+      output: makeOutput(),
+      synthA: { volume: { value: 0 } },
+      synthB: { volume: { value: 0 } },
+      formantFilters: [],
+      setMood() {},
+      setVowel() {},
+      setFilterCutoff() {},
+      setVolume() {},
+      setFormantQ() {},
+      setTimbreProfile() {},
+      setSeasonalPalette() {},
+      playChord() {},
+      changeChord() {},
+      stop() {},
       dispose() {},
     };
   },
