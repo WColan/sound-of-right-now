@@ -1,12 +1,51 @@
 import { describeWeatherCode } from '../weather/codes.js';
-import { getMoonPhaseName } from '../weather/moon.js';
+
+/**
+ * Convert wind bearing in degrees to 8-point compass direction.
+ */
+export function degreesToCompass(degrees) {
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return dirs[Math.round(degrees / 45) % 8];
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Format a local time string from a UTC offset.
+ * Uses UTC arithmetic to avoid browser timezone interference.
+ */
+function formatLocalTime(utcOffsetSeconds) {
+  const localMs = Date.now() + utcOffsetSeconds * 1000;
+  const d = new Date(localMs);
+  const hours = d.getUTCHours();
+  const minutes = d.getUTCMinutes();
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const h12 = hours % 12 || 12;
+  return `${h12}:${String(minutes).padStart(2, '0')} ${period}`;
+}
 
 /**
  * Updates the info display overlay with current weather and music data.
+ * Minimal layout: location + local time on row 1, curated blend on row 2.
  */
 export function createDisplay() {
   const locationEl = document.getElementById('info-location');
+  const timeEl = document.getElementById('info-time');
   const detailsEl = document.getElementById('info-details');
+
+  let storedUtcOffset = 0;
+  let timeInterval = null;
+
+  function updateTimeDisplay() {
+    if (timeEl) {
+      timeEl.textContent = formatLocalTime(storedUtcOffset);
+    }
+  }
+
+  // Update the clock every 30 seconds
+  timeInterval = setInterval(updateTimeDisplay, 30000);
 
   return {
     /**
@@ -25,50 +64,26 @@ export function createDisplay() {
      * @param {object} [aqiData]
      */
     update(weather, musicalParams, tideData = null, aqiData = null) {
+      // Store UTC offset for ongoing time updates
+      storedUtcOffset = weather.utcOffsetSeconds ?? 0;
+      updateTimeDisplay();
+
       const tempF = Math.round(weather.temperature * 9 / 5 + 32);
       const condition = describeWeatherCode(weather.weatherCode);
-      const moonName = getMoonPhaseName();
       const mode = capitalize(musicalParams.scaleType);
       const bpm = musicalParams.bpm;
 
-      let line1 = `${tempF}\u00B0F  ${condition}`;
-      let line2 = `${musicalParams.rootNote} ${mode}  \u00B7  ${bpm} BPM  \u00B7  ${moonName}`;
+      // Single curated blend line: weather + audio essentials
+      const blendLine = `${tempF}\u00B0F ${condition}  \u00B7  ${musicalParams.rootNote} ${mode}  \u00B7  ${bpm} BPM`;
+      detailsEl.innerHTML = `<div>${blendLine}</div>`;
+    },
 
-      if (tideData) {
-        line1 += `  \u00B7  Tide ${tideData.waterLevel.toFixed(1)}ft`;
+    /** Clean up the time interval */
+    dispose() {
+      if (timeInterval) {
+        clearInterval(timeInterval);
+        timeInterval = null;
       }
-
-      // Third line: detailed sensor readings
-      const windDir = degreesToCompass(weather.windDirection);
-      const parts = [
-        `${weather.humidity}% RH`,
-        `${Math.round(weather.windSpeed)} km/h ${windDir}`,
-        `${Math.round(weather.pressure)} hPa`,
-      ];
-      if (weather.uvIndex != null && weather.uvIndex > 0) {
-        parts.push(`UV ${weather.uvIndex.toFixed(0)}`);
-      }
-      if (aqiData?.aqi != null) {
-        parts.push(`AQI ${aqiData.aqi}`);
-      }
-      const line3 = parts.join('  \u00B7  ');
-
-      detailsEl.innerHTML =
-        `<div>${line1}</div>` +
-        `<div style="margin-top: 0.2rem">${line2}</div>` +
-        `<div class="info-details-sub">${line3}</div>`;
     },
   };
-}
-
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-/**
- * Convert wind bearing in degrees to 8-point compass direction.
- */
-function degreesToCompass(degrees) {
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  return dirs[Math.round(degrees / 45) % 8];
 }

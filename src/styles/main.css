@@ -132,22 +132,27 @@ canvas#visualizer {
   pointer-events: none;
 }
 
+.info-location-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .info-location {
   color: var(--text-primary);
   font-size: 0.85rem;
-  margin-bottom: 0.3rem;
+}
+
+.info-time {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
 }
 
 .info-details {
   color: var(--text-secondary);
-}
-
-/* Third line in info display — slightly smaller, dimmer */
-.info-details-sub {
-  font-size: 0.65rem;
-  color: var(--text-dim);
   margin-top: 0.2rem;
-  letter-spacing: 0.06em;
 }
 
 /* Controls - bottom right */
@@ -180,9 +185,25 @@ canvas#visualizer {
 }
 
 #pause-btn {
-  font-size: 1.2rem; /* Icon glyphs need a bit more room than the text buttons */
-  letter-spacing: 0;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+}
+
+#pause-btn svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-dim);
+  transition: color 0.3s ease;
+}
+
+#pause-btn:hover svg {
+  color: var(--text-secondary);
+}
+
+#pause-btn .hidden {
+  display: none;
 }
 
 #menu-btn {
@@ -236,6 +257,7 @@ canvas#visualizer {
   padding: 0.45rem;
   background: rgba(10, 10, 15, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: opacity 0.2s ease;
@@ -340,6 +362,7 @@ canvas#visualizer {
 .location-search input {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
   color: var(--text-primary);
   padding: 0.5rem 0.8rem;
   font-size: 0.8rem;
@@ -358,6 +381,7 @@ canvas#visualizer {
   width: 220px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
   color: var(--text-secondary);
   padding: 0.38rem 0.62rem;
   font-size: 0.72rem;
@@ -406,6 +430,7 @@ canvas#visualizer {
   background: rgba(10, 10, 15, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-top: none;
+  border-radius: 0 0 8px 8px;
   max-height: 200px;
   overflow-y: auto;
 }
@@ -519,6 +544,7 @@ canvas#visualizer {
   background: rgba(10, 10, 15, 0.85);
   padding: 0.5rem 0.8rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   transition: opacity 0.3s ease;
 }
 
@@ -530,6 +556,7 @@ canvas#visualizer {
 .mute-btn {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
   color: var(--text-secondary);
   font-size: 0.65rem;
   letter-spacing: 0.1em;
@@ -545,8 +572,8 @@ canvas#visualizer {
   text-decoration: line-through;
 }
 
-/* "What am I hearing" panel */
-.hearing-panel {
+/* Shared info panel (weather, audio) */
+.info-panel {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -556,25 +583,27 @@ canvas#visualizer {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
   padding: 1.5rem 2rem;
-  min-width: 240px;
-  font-size: 0.8rem;
+  min-width: 260px;
+  max-width: 420px;
+  font-size: 0.78rem;
   line-height: 2;
   color: var(--text-secondary);
   transition: opacity 0.3s ease;
 }
 
-.hearing-panel.hidden {
+.info-panel.hidden {
   opacity: 0;
   pointer-events: none;
 }
 
-.hearing-panel strong {
+.info-panel strong {
   color: var(--text-primary);
   font-weight: 500;
 }
 
-.hearing-close {
+.panel-close {
   position: absolute;
   top: 0.5rem;
   right: 0.8rem;
@@ -587,8 +616,14 @@ canvas#visualizer {
   transition: color 0.2s ease;
 }
 
-.hearing-close:hover {
+.panel-close:hover {
   color: var(--text-secondary);
+}
+
+.mapping-hint {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
 }
 
 /* ── Mobile layout ── */
@@ -625,14 +660,16 @@ canvas#visualizer {
     gap: 0.85rem;
     align-items: center;
     white-space: nowrap;
+    transition: opacity 1s ease, transform 0.3s ease;
   }
 
   .volume-slider {
     width: 62px;
   }
 
-  #pause-btn {
-    font-size: 1.08rem;
+  #pause-btn svg {
+    width: 12px;
+    height: 12px;
   }
 
   #menu-btn {
@@ -650,24 +687,39 @@ canvas#visualizer {
     transform: translateX(-50%);
     text-align: center;
     width: calc(100vw - 3rem);
+    transition: opacity 1s ease, transform 0.3s ease;
+  }
+
+  .info-location-row {
+    justify-content: center;
   }
 
   .chord-display {
     bottom: 10.8rem;
-    /* left: 50% + translateX(-50%) already set on desktop — no change */
+    transition: opacity 1s ease, transform 0.3s ease;
   }
 
-  /* Location search: full-width, anchored above controls */
+  /* Location search: centered modal on mobile */
   .location-search {
+    top: 50%;
+    bottom: auto;
     right: auto;
     left: 50%;
-    transform: translateX(-50%);
-    bottom: 4rem;
-    width: calc(100vw - 3rem);
+    transform: translate(-50%, -50%);
+    width: calc(100vw - 4rem);
+    max-width: 340px;
+    background: rgba(10, 10, 15, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 1.2rem;
   }
 
   .location-search input {
     width: 100%;
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
   }
 
   .current-location-btn {
@@ -684,11 +736,41 @@ canvas#visualizer {
     z-index: 19;
   }
 
+  /* Mix panel: full-width bottom bar on mobile */
   .mute-panel {
-    bottom: 7.5rem;
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 1.5rem;
+    right: 0;
+    left: 0;
+    transform: none;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 0.6rem 1rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    z-index: 16;
+  }
+
+  /* When mix panel is open, push info + chord + controls up */
+  body.mix-open .controls {
+    transform: translateX(-50%) translateY(-3rem);
+  }
+
+  body.mix-open .info-display {
+    transform: translateX(-50%) translateY(-3rem);
+  }
+
+  body.mix-open .chord-display {
+    transform: translateX(-50%) translateY(-3rem);
+  }
+
+  /* Info panels on mobile */
+  .info-panel {
+    width: calc(100vw - 2rem);
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 1.2rem 1.4rem;
+    font-size: 0.74rem;
   }
 }
 
@@ -738,11 +820,6 @@ canvas#visualizer {
 
   .info-location {
     font-size: 0.8rem;
-  }
-
-  .info-details-sub {
-    font-size: 0.6rem;
-    letter-spacing: 0.05em;
   }
 
   .chord-display {
