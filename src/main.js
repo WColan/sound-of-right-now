@@ -247,8 +247,10 @@ function onWeatherUpdate(weather) {
 
 /**
  * Set up data fetching for a given location.
+ * updateUrl = false for geolocation-based boots so stale coords don't persist
+ * in the URL and get mistaken for a shared link on the next visit.
  */
-async function startForLocation(latitude, longitude, locationName, { fadeIn = false } = {}) {
+async function startForLocation(latitude, longitude, locationName, { fadeIn = false, updateUrl = true } = {}) {
   const requestId = ++currentLocationRequestId;
   display.setLocation(locationName || 'Loading...');
 
@@ -256,8 +258,15 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
   currentLatitude = latitude;
   currentLongitude = longitude;
 
-  // Update URL so the current location is shareable
-  history.replaceState(null, '', buildShareSearch(latitude, longitude));
+  // Update URL so the current location is shareable.
+  // Skip for geolocation-based loads: writing coords here would cause the next
+  // page visit to parse them as a "shared link" and bypass fresh geolocation.
+  if (updateUrl) {
+    history.replaceState(null, '', buildShareSearch(latitude, longitude));
+  } else {
+    // Clear any leftover share params (e.g. from a previously visited shared link)
+    history.replaceState(null, '', window.location.pathname);
+  }
 
   // ── Tear down old audio engine ──
   // Tone.js audio nodes are permanently destroyed by dispose() and cannot be
@@ -361,7 +370,7 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
 /**
  * Boot sequence: create engine with placeholder params, then connect to real weather.
  */
-async function boot(latitude, longitude, locationName) {
+async function boot(latitude, longitude, locationName, { updateUrl = true } = {}) {
   const overlay = document.getElementById('overlay');
   const infoDisplay = document.getElementById('info-display');
   const controls = document.getElementById('controls');
@@ -486,7 +495,7 @@ async function boot(latitude, longitude, locationName) {
     pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
     melody: 'melodyVolume', texture: 'textureVolume',
     percussion: 'percussionVolume', drone: 'droneVolume',
-    choir: 'choirVolume',
+    windChime: 'windChimeVolume', choir: 'choirVolume',
   };
   const mutedVoices = new Set();
 
@@ -753,7 +762,7 @@ async function boot(latitude, longitude, locationName) {
   });
 
   // Connect to real weather data — fade in on first load so audio swells in gently
-  await startForLocation(latitude, longitude, locationName, { fadeIn: true });
+  await startForLocation(latitude, longitude, locationName, { fadeIn: true, updateUrl });
 }
 
 /**
@@ -785,22 +794,25 @@ function init() {
       display = createDisplay(); // Temp display for loading message
       display.setLocation('Finding your location...');
 
-      // Check for permalink ?lat=&lng= params — shared link takes priority.
-      // Clear params immediately so a subsequent page reload uses geolocation
-      // instead of re-loading the same shared coordinates.
+      // Check for permalink ?lat=&lng= params — shared link takes priority when
+      // geolocation is unavailable, but fresh geolocation always wins if accessible.
+      // We do NOT write coords back to the URL for geolocation boots so that
+      // returning to the page (or tab restore) never re-uses stale coords.
       const sharedCoords = parseSharedCoordinates(window.location.search);
       history.replaceState(null, '', window.location.pathname);
 
-      if (sharedCoords) {
-        await boot(sharedCoords.latitude, sharedCoords.longitude, null);
+      const browserLoc = await getBrowserLocation();
+      if (browserLoc) {
+        // Always prefer real geolocation — ignore any URL params from a previous
+        // session or a shared link the user received (updateUrl: false keeps URL clean).
+        await boot(browserLoc.latitude, browserLoc.longitude, null, { updateUrl: false });
+      } else if (sharedCoords) {
+        // Geolocation denied/unavailable — honour the shared link coordinates.
+        // updateUrl: true so the share button and refresh still point to this location.
+        await boot(sharedCoords.latitude, sharedCoords.longitude, null, { updateUrl: true });
       } else {
-        const browserLoc = await getBrowserLocation();
-        if (browserLoc) {
-          await boot(browserLoc.latitude, browserLoc.longitude, null);
-        } else {
-          // Default to New York
-          await boot(40.7128, -74.006, 'New York, NY');
-        }
+        // Final fallback: New York
+        await boot(40.7128, -74.006, 'New York, NY', { updateUrl: false });
       }
 
       // Startup succeeded; remove one-time overlay keyboard shortcuts.

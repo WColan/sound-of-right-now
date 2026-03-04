@@ -74,8 +74,10 @@ export function mapWeatherToMusic(weather, options = {}) {
   const windNorm = clamp(weather.windSpeed / 50, 0, 1);
   const rhythmDensity = lerp(0.05, 0.6, windNorm);
   const arpeggioVolume = lerp(-26, -14, windNorm);
-  // Wind chime activates above 8 km/h; volume rises with wind speed
-  const windChimeVolume = weather.windSpeed > 8 ? lerp(-30, -12, windNorm) : -80;
+  // Wind chime activates above 3 km/h (light breeze). Volume is driven by
+  // humidity (humid air dampens high-frequency metallic resonance), not wind
+  // speed — wind controls strike *frequency* via setWindSpeed() in the voice.
+  const windChimeVolume = weather.windSpeed > 3 ? lerp(-12, -16, humNorm) : -80;
   // Windier conditions create faster, more dramatic atmospheric texture sweeps.
   // Calm (windNorm=0): 0.05 Hz slow drift, 0.3 depth (gentle)
   // Gusty (windNorm=1): 0.4 Hz fast churn, 0.9 depth (dramatic)

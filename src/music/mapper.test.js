@@ -169,24 +169,30 @@ describe('mapWeatherToMusic — weather category routing', () => {
   });
 });
 
-// ── Wind speed boundary: wind chime ──────────────────────────────────────
+// ── Wind chime activation & humidity-based volume ────────────────────────
 
 describe('mapWeatherToMusic — wind chime activation', () => {
-  it('silences wind chime below 8 km/h', () => {
-    const result = mapWeatherToMusic(makeWeather({ windSpeed: 5 }));
+  it('silences wind chime below 3 km/h', () => {
+    const result = mapWeatherToMusic(makeWeather({ windSpeed: 2 }));
     expect(result.windChimeVolume).toBe(-80);
   });
 
-  it('activates wind chime above 8 km/h', () => {
-    const result = mapWeatherToMusic(makeWeather({ windSpeed: 20 }));
+  it('activates wind chime above 3 km/h', () => {
+    const result = mapWeatherToMusic(makeWeather({ windSpeed: 5 }));
     expect(result.windChimeVolume).toBeGreaterThan(-80);
     expect(result.windChimeVolume).toBeLessThan(0);
   });
 
-  it('wind chime volume increases with wind speed', () => {
-    const calm   = mapWeatherToMusic(makeWeather({ windSpeed: 10 }));
-    const gusty  = mapWeatherToMusic(makeWeather({ windSpeed: 45 }));
-    expect(gusty.windChimeVolume).toBeGreaterThan(calm.windChimeVolume);
+  it('volume is louder in dry air than humid air', () => {
+    const dry   = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 10 }));
+    const humid = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 90 }));
+    expect(dry.windChimeVolume).toBeGreaterThan(humid.windChimeVolume);
+  });
+
+  it('volume does not change with wind speed when active', () => {
+    const light = mapWeatherToMusic(makeWeather({ windSpeed: 5, humidity: 50 }));
+    const gusty = mapWeatherToMusic(makeWeather({ windSpeed: 40, humidity: 50 }));
+    expect(light.windChimeVolume).toBe(gusty.windChimeVolume);
   });
 });
 

@@ -711,6 +711,13 @@ export function createSoundEngine() {
       }
       melody.synth.volume.value = melodyVolume ?? -20;
 
+      // Wind chime — volume + activation (must be after progression starts so
+      // setNotes() has populated the note pool via onChordChange).
+      const wcVol = params.windChimeVolume ?? -80;
+      windChime.output.volume.value = wcVol;
+      windChimeWasActive = wcVol > -70;
+      windChime.setActive(windChimeWasActive);
+
       // Choir — formant-filtered sustained chords
       choir.setVolume(params.choirVolume ?? -18, 0);
       if (melodyMood) choir.setMood(melodyMood);
