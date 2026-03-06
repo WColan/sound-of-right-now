@@ -300,6 +300,36 @@ function buildChord(root, mode, degree, qualities) {
 }
 
 /**
+ * Linearly interpolate between two Markov weight tables.
+ * Each table is { degree: { target_degree: weight } }.
+ * At t=0 returns weightsA exactly; at t=1 returns weightsB exactly.
+ *
+ * @param {Object} weightsA - Source weight table
+ * @param {Object} weightsB - Target weight table
+ * @param {number} t - Blend factor 0–1
+ * @returns {Object} Blended weight table
+ */
+export function blendWeights(weightsA, weightsB, t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  if (clamped === 0) return weightsA;
+  if (clamped === 1) return weightsB;
+
+  const result = {};
+  for (const degree of Object.keys(weightsA)) {
+    result[degree] = {};
+    const rowA = weightsA[degree] || {};
+    const rowB = weightsB[degree] || {};
+    const allTargets = new Set([...Object.keys(rowA), ...Object.keys(rowB)]);
+    for (const target of allTargets) {
+      const a = rowA[target] ?? 0;
+      const b = rowB[target] ?? 0;
+      result[degree][target] = Math.max(0, a + (b - a) * clamped);
+    }
+  }
+  return result;
+}
+
+/**
  * Generate a chord progression using Markov-chain degree selection.
  *
  * Each mood has transition probability weights that encode its harmonic
@@ -310,19 +340,27 @@ function buildChord(root, mode, degree, qualities) {
  * @param {string} mode - Mode name (e.g. 'dorian')
  * @param {string} weatherCategory - e.g. 'clear', 'rain', 'storm'
  * @param {number} pressureNorm - 0-1 normalized pressure
+ * @param {number} [tensionLevel=0] - 0–1 movement tension (blends toward tense weights)
  * @returns {Progression}
  */
-export function generateProgression(root, mode, weatherCategory, pressureNorm) {
+export function generateProgression(root, mode, weatherCategory, pressureNorm, tensionLevel = 0) {
   const mood = CATEGORY_TO_MOOD[weatherCategory] || 'calm';
   const harmonicRhythm = getHarmonicRhythm(pressureNorm, weatherCategory);
   const qualities = DIATONIC_CHORDS[mode] || DIATONIC_CHORDS.ionian;
 
-  // Determine progression length
-  const lengths = PROGRESSION_LENGTHS[mood] || { min: 4, max: 6 };
-  const length = lengths.min + Math.floor(Math.random() * (lengths.max - lengths.min + 1));
+  // Determine progression length — blend toward tense lengths at higher tension
+  const baseLengths = PROGRESSION_LENGTHS[mood] || { min: 4, max: 6 };
+  const tenseLengths = PROGRESSION_LENGTHS.tense; // { min: 6, max: 10 }
+  const effectiveTension = Math.max(0, Math.min(1, tensionLevel));
+  const minLen = Math.round(baseLengths.min + (tenseLengths.min - baseLengths.min) * effectiveTension);
+  const maxLen = Math.round(baseLengths.max + (tenseLengths.max - baseLengths.max) * effectiveTension);
+  const length = minLen + Math.floor(Math.random() * (maxLen - minLen + 1));
 
-  // Build degree sequence via Markov chain
-  const transitions = TRANSITION_WEIGHTS[mood] || TRANSITION_WEIGHTS.calm;
+  // Build degree sequence via Markov chain — blend weights toward tense at higher tension
+  const baseTransitions = TRANSITION_WEIGHTS[mood] || TRANSITION_WEIGHTS.calm;
+  const transitions = effectiveTension > 0
+    ? blendWeights(baseTransitions, TRANSITION_WEIGHTS.tense, effectiveTension)
+    : baseTransitions;
   const startWeights = STARTING_WEIGHTS[mood] || STARTING_WEIGHTS.calm;
 
   const degrees = [];
@@ -342,7 +380,9 @@ export function generateProgression(root, mode, weatherCategory, pressureNorm) {
   // After building the diatonic sequence, scan for eligible target chords and
   // optionally insert a V7/x chord immediately before them.
   // scaleTones from the first chord represents the full scale (same for all diatonic chords).
-  const secDomProb = SEC_DOM_PROBABILITY[mood] ?? 0;
+  // Tension level boosts secondary dominant probability by up to +0.15
+  const baseSecDomProb = SEC_DOM_PROBABILITY[mood] ?? 0;
+  const secDomProb = Math.min(0.5, baseSecDomProb + effectiveTension * 0.15);
   let finalChords = chords;
 
   if (secDomProb > 0) {
