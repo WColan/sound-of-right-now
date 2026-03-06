@@ -19,7 +19,12 @@ import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { handleMainKeydown } from './ui/shortcuts.js';
 import { classifyBiome } from './weather/biome.js';
-import { createMovementConductor, CONDUCTOR_ENABLED } from './music/movement.js';
+import {
+  createMovementConductor,
+  CONDUCTOR_ENABLED,
+  PHASE_TEMPLATE,
+  smoothstep,
+} from './music/movement.js';
 import { VERSION } from './version.js';
 
 // Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
@@ -104,6 +109,27 @@ const SWELL_RANGES = {
   windChimeVolume: 3,
 };
 
+// ── Stillness attenuation (max dB pullback at end of stillness) ──
+const STILLNESS_DB_CUTS = {
+  padVolume: 12,
+  arpeggioVolume: 14,
+  bassVolume: 10,
+  textureVolume: 13,
+  percussionVolume: 16,
+  droneVolume: 11,
+  melodyVolume: 15,
+  choirVolume: 12,
+  windChimeVolume: 8,
+};
+
+function getStillnessDepth() {
+  const phase = movementConductor?.getCurrentPhase();
+  if (!phase || phase.name !== 'stillness') return 0;
+  const span = Math.max(1e-6, PHASE_TEMPLATE.stillness.end - PHASE_TEMPLATE.stillness.start);
+  const localProgress = (phase.progress - PHASE_TEMPLATE.stillness.start) / span;
+  return smoothstep(Math.max(0, Math.min(1, localProgress)));
+}
+
 /**
  * Apply movement expression on top of weather baselines.
  * Reads the interpolator's currentParams for weather values and adds
@@ -119,6 +145,7 @@ function applyExpression(expression, rampTime = 5) {
 
   const params = interpolator.currentParams;
   if (!params) return;
+  const stillnessDepth = getStillnessDepth();
 
   const { dynamicSwell, harmonicTension, rhythmicEnergy, melodicUrgency, effectDepth } = expression;
 
@@ -133,44 +160,72 @@ function applyExpression(expression, rampTime = 5) {
     if (voiceName && mutedVoicesSet?.has(voiceName)) continue; // Don't swell muted voices
 
     const swellDb = dynamicSwell * maxSwell;
-    engine.rampParam(paramKey, baseline + swellDb, rampTime);
+    const stillnessCutDb = (STILLNESS_DB_CUTS[paramKey] ?? 10) * stillnessDepth;
+    engine.rampParam(paramKey, baseline + swellDb - stillnessCutDb, rampTime);
   }
 
   // ── Melody: extra swell + probability scaling ──
   if (engine.voices?.melody) {
-    engine.voices.melody.setProbabilityScale(1 + melodicUrgency * 0.6);
+    const melodicScale = Math.max(0.08, (1 + melodicUrgency * 0.6) * (1 - stillnessDepth * 0.9));
+    engine.voices.melody.setProbabilityScale(melodicScale);
   }
 
   // ── Harmonic tension ──
-  engine.setMovementTension(harmonicTension);
+  const settledTension = Math.max(0, harmonicTension * (1 - stillnessDepth * 0.85));
+  engine.setMovementTension(settledTension);
 
   // ── Rhythm: density boost ──
   const baseDensity = params.rhythmDensity ?? 0.2;
-  const boostedDensity = Math.min(1, baseDensity * (1 + rhythmicEnergy * 0.8));
-  engine.rampParam('rhythmDensity', boostedDensity, rampTime);
+  const boostedDensity = baseDensity * (1 + rhythmicEnergy * 0.8);
+  const settledDensity = boostedDensity * (1 - stillnessDepth * 0.95);
+  engine.rampParam('rhythmDensity', Math.max(0.01, Math.min(1, settledDensity)), rampTime);
 
   // ── Effects: reverb, chorus, delay, filter ──
   const baseReverbWet = params.reverbWet ?? 0.3;
-  engine.rampParam('reverbWet', Math.min(0.7, baseReverbWet + effectDepth * 0.15), rampTime);
+  const targetReverbWet = Math.max(
+    0.03,
+    Math.min(0.7, baseReverbWet + effectDepth * 0.15) * (1 - stillnessDepth * 0.75),
+  );
+  engine.rampParam('reverbWet', targetReverbWet, rampTime);
 
   const baseChorusDepth = params.chorusDepth ?? 0.5;
-  engine.rampParam('chorusDepth', Math.min(0.9, baseChorusDepth + effectDepth * 0.2), rampTime);
+  const targetChorusDepth = Math.max(
+    0.02,
+    Math.min(0.9, baseChorusDepth + effectDepth * 0.2) * (1 - stillnessDepth * 0.9),
+  );
+  engine.rampParam('chorusDepth', targetChorusDepth, rampTime);
 
   const baseDelayFeedback = params.delayFeedback ?? 0.2;
-  engine.rampParam('delayFeedback', Math.min(0.5, baseDelayFeedback + effectDepth * 0.1), rampTime);
+  const targetDelayFeedback = Math.max(
+    0.02,
+    Math.min(0.5, baseDelayFeedback + effectDepth * 0.1) * (1 - stillnessDepth * 0.92),
+  );
+  engine.rampParam('delayFeedback', targetDelayFeedback, rampTime);
 
   // Master filter opens during expression swell
   const baseMasterFilter = params.masterFilterCutoff ?? 8000;
-  engine.rampParam('masterFilterCutoff', Math.min(16000, baseMasterFilter * (1 + effectDepth * 0.4)), rampTime);
+  const targetMasterFilter = Math.max(
+    1200,
+    Math.min(16000, baseMasterFilter * (1 + effectDepth * 0.4)) * (1 - stillnessDepth * 0.65),
+  );
+  engine.rampParam('masterFilterCutoff', targetMasterFilter, rampTime);
 
   // Spatial width expands during swell
   const baseArpWidth = params.arpeggioWidth ?? 0.4;
-  engine.rampParam('arpeggioWidth', Math.min(1, baseArpWidth + effectDepth * 0.2), rampTime);
+  const targetArpWidth = Math.max(
+    0.05,
+    Math.min(1, baseArpWidth + effectDepth * 0.2) * (1 - stillnessDepth * 0.85),
+  );
+  engine.rampParam('arpeggioWidth', targetArpWidth, rampTime);
   const baseMelWidth = params.melodyWidth ?? 0.3;
-  engine.rampParam('melodyWidth', Math.min(1, baseMelWidth + effectDepth * 0.15), rampTime);
+  const targetMelWidth = Math.max(
+    0.05,
+    Math.min(1, baseMelWidth + effectDepth * 0.15) * (1 - stillnessDepth * 0.85),
+  );
+  engine.rampParam('melodyWidth', targetMelWidth, rampTime);
 
   // ── Microtonal: activate when harmonicTension is high ──
-  if (harmonicTension > 0.6 && engine.updateMicrotonalContext) {
+  if (settledTension > 0.6 && stillnessDepth < 0.35 && engine.updateMicrotonalContext) {
     // Force microtonal on during high tension regardless of weather
     engine.updateMicrotonalContext('fog', 0, 0); // 'fog' triggers microtonal
   }
@@ -182,7 +237,8 @@ function applyExpression(expression, rampTime = 5) {
       `🎼 Expression: ${phase.name} (mvt #${phase.movementNumber} ${phase.personality}) ` +
       `intensity=${expression.intensity.toFixed(2)} swell=${dynamicSwell.toFixed(2)} ` +
       `tension=${harmonicTension.toFixed(2)} rhythm=${rhythmicEnergy.toFixed(2)} ` +
-      `melody=${melodicUrgency.toFixed(2)} fx=${effectDepth.toFixed(2)}`
+      `melody=${melodicUrgency.toFixed(2)} fx=${effectDepth.toFixed(2)} ` +
+      `still=${stillnessDepth.toFixed(2)}`
     );
   }
 }
@@ -787,6 +843,10 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
 
   const conductorPanel = document.getElementById('conductor-panel');
   const conductorStatus = document.getElementById('conductor-status');
+  const conductorTimeline = document.getElementById('conductor-timeline');
+  const conductorPlayhead = document.getElementById('conductor-playhead');
+  const conductorCurrent = document.getElementById('conductor-current');
+  const conductorNext = document.getElementById('conductor-next');
   const conductorMenuBtn = document.getElementById('conductor-btn');
   const panelControls = setupInfoPanels({
     weatherPanel,
@@ -801,6 +861,10 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     buildAudioText,
     conductorPanel,
     conductorStatus,
+    conductorTimeline,
+    conductorPlayhead,
+    conductorCurrent,
+    conductorNext,
     conductorMenuBtn,
     movementConductor,
     conductorEnabled: CONDUCTOR_ENABLED,

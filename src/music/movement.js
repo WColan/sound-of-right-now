@@ -81,10 +81,10 @@ export const WEATHER_PERSONALITY = {
 export const PHASE_TEMPLATE = {
   breathing:  { start: 0,    end: 0.18, from: 0.15, to: 0.25 },
   stirring:   { start: 0.18, end: 0.40, from: 0.25, to: 0.55 },
-  building:   { start: 0.40, end: 0.58, from: 0.55, to: 0.85 },
-  climax:     { start: 0.58, end: 0.72, from: 0.85, to: 0.9, peak: 0.65, peakIntensity: 1.0 },
-  descent:    { start: 0.72, end: 0.88, from: 0.9,  to: 0.35 },
-  stillness:  { start: 0.88, end: 1.0,  from: 0.35, to: 0.1 },
+  building:   { start: 0.40, end: 0.58, from: 0.55, to: 0.9 },
+  climax:     { start: 0.58, end: 0.72, from: 0.9, to: 0.78, peak: 0.64, peakIntensity: 1.0 },
+  descent:    { start: 0.72, end: 0.88, from: 0.78, to: 0.28 },
+  stillness:  { start: 0.88, end: 1.0,  from: 0.28, to: 0.03 },
 };
 
 export const PHASE_ORDER = ['breathing', 'stirring', 'building', 'climax', 'descent', 'stillness'];
@@ -180,6 +180,37 @@ export function getPhaseAtProgress(t) {
 }
 
 /**
+ * Phase-local progress helper.
+ * @param {number} t - movement progress 0–1
+ * @param {string} phaseName
+ * @returns {number} local phase progress 0–1
+ */
+function getPhaseLocalProgress(t, phaseName) {
+  const phase = PHASE_TEMPLATE[phaseName];
+  if (!phase) return 0;
+  const len = Math.max(1e-6, phase.end - phase.start);
+  return Math.max(0, Math.min(1, (t - phase.start) / len));
+}
+
+/**
+ * Climax accent curve (0–1): rises to the climax peak and falls after it.
+ * Used to push expression dimensions harder at the apex.
+ */
+function getClimaxAccent(t) {
+  const phase = PHASE_TEMPLATE.climax;
+  if (!phase || t < phase.start || t > phase.end) return 0;
+
+  const peak = phase.peak ?? (phase.start + phase.end) / 2;
+  if (t <= peak) {
+    const riseLen = Math.max(1e-6, peak - phase.start);
+    return smoothstep((t - phase.start) / riseLen);
+  }
+
+  const fallLen = Math.max(1e-6, phase.end - peak);
+  return smoothstep((phase.end - t) / fallLen);
+}
+
+/**
  * Create a movement conductor instance.
  * Manages the lifecycle of movements, computes expression dimensions,
  * and fires callbacks on phase/movement boundaries.
@@ -189,6 +220,7 @@ export function getPhaseAtProgress(t) {
 export function createMovementConductor() {
   // ── State ──
   let elapsed = 0;           // seconds into current movement
+  let totalElapsed = 0;      // total listening seconds across movements
   let duration = 0;          // total seconds for current movement
   let movementNumber = 0;
   let personality = null;
@@ -291,9 +323,21 @@ export function createMovementConductor() {
       if (dim === 'melodicUrgency') {
         // Melody urgency is boosted during the climax phase for musical impact
         const phase = getPhaseAtProgress(offsetProgress);
-        if (phase === 'climax' || phase === 'building') {
-          rawValue *= 1.15;
-        }
+        if (phase === 'building') rawValue *= 1.12;
+        if (phase === 'climax') rawValue *= 1.28;
+      }
+
+      const phase = getPhaseAtProgress(offsetProgress);
+      const climaxAccent = getClimaxAccent(offsetProgress);
+      if (dim === 'dynamicSwell') rawValue *= (1 + climaxAccent * 0.22);
+      if (dim === 'harmonicTension') rawValue *= (1 + climaxAccent * 0.18);
+      if (dim === 'rhythmicEnergy') rawValue *= (1 + climaxAccent * 0.32);
+      if (dim === 'effectDepth') rawValue *= (1 + climaxAccent * 0.12);
+
+      if (phase === 'stillness') {
+        // Stillness should progressively withdraw all motion by movement end.
+        const stillnessDepth = smoothstep(getPhaseLocalProgress(offsetProgress, 'stillness'));
+        rawValue *= (1 - stillnessDepth * 0.92);
       }
 
       dimValues[dim] = Math.max(0, Math.min(1, rawValue));
@@ -317,6 +361,7 @@ export function createMovementConductor() {
       if (lastTickTime != null) {
         const deltaSec = (now - lastTickTime) / 1000;
         elapsed += deltaSec;
+        totalElapsed += deltaSec;
       }
       lastTickTime = now;
 
@@ -365,7 +410,7 @@ export function createMovementConductor() {
       if (!personality) {
         return {
           name: 'inactive', progress: 0, movementNumber: 0,
-          personality: '', elapsed: 0, remaining: 0,
+          personality: '', elapsed: 0, remaining: 0, listeningSeconds: totalElapsed,
         };
       }
       const progress = duration > 0 ? Math.min(elapsed / duration, 1) : 0;
@@ -376,6 +421,7 @@ export function createMovementConductor() {
         personality: personalityName,
         elapsed,
         remaining: Math.max(0, duration - elapsed),
+        listeningSeconds: totalElapsed,
       };
     },
 
@@ -420,6 +466,7 @@ export function createMovementConductor() {
     /** Reset the conductor — zeroes everything for a fresh start. */
     reset() {
       elapsed = 0;
+      totalElapsed = 0;
       duration = 0;
       movementNumber = 0;
       personality = null;
@@ -451,6 +498,7 @@ export function createMovementConductor() {
     get personalityName() { return personalityName; },
     get isPaused() { return paused; },
     get elapsed() { return elapsed; },
+    get totalElapsed() { return totalElapsed; },
     get duration() { return duration; },
   };
 }

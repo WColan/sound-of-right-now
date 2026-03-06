@@ -55,9 +55,9 @@ describe('computeIntensity', () => {
     expect(val).toBeGreaterThan(0.85);
   });
 
-  it('falls near 0.1 at t=1 (stillness end)', () => {
+  it('falls near 0.03 at t=1 (stillness end)', () => {
     const val = computeIntensity(1.0, 1.0);
-    expect(val).toBeCloseTo(0.1, 1);
+    expect(val).toBeCloseTo(0.03, 2);
   });
 
   it('is always >= 0 and <= peakIntensity for all t', () => {
@@ -94,6 +94,15 @@ describe('computeIntensity', () => {
     const stillness = computeIntensity(0.95, 1.0);
     expect(descent).toBeLessThan(climax);
     expect(stillness).toBeLessThan(descent);
+  });
+
+  it('creates a pronounced contrast around the climax peak', () => {
+    const prePeak = computeIntensity(0.59, 1.0);
+    const peak = computeIntensity(0.64, 1.0);
+    const postPeak = computeIntensity(0.71, 1.0);
+
+    expect(peak - prePeak).toBeGreaterThan(0.07);
+    expect(peak - postPeak).toBeGreaterThan(0.15);
   });
 });
 
@@ -319,6 +328,47 @@ describe('createMovementConductor', () => {
       const dramaticRhythm = conductor.getExpression().rhythmicEnergy;
 
       expect(dramaticRhythm).toBeGreaterThan(meditativeRhythm);
+    });
+
+    it('expression peaks harder at the climax apex than at climax entry', () => {
+      conductor.setPersonalityOverride('dramatic');
+      performance.now.mockReturnValue(0);
+      conductor.resume();
+      conductor.tick();
+
+      const duration = conductor.duration;
+      performance.now.mockReturnValue(duration * 0.59 * 1000);
+      conductor.tick();
+      const earlyClimax = conductor.getExpression();
+
+      performance.now.mockReturnValue(duration * 0.64 * 1000);
+      conductor.tick();
+      const apex = conductor.getExpression();
+
+      expect(apex.intensity).toBeGreaterThan(earlyClimax.intensity);
+      expect(apex.dynamicSwell).toBeGreaterThan(earlyClimax.dynamicSwell);
+      expect(apex.rhythmicEnergy).toBeGreaterThanOrEqual(earlyClimax.rhythmicEnergy);
+    });
+
+    it('stillness progressively withdraws expression dimensions near movement end', () => {
+      conductor.setPersonalityOverride('dramatic');
+      performance.now.mockReturnValue(0);
+      conductor.resume();
+      conductor.tick();
+
+      const duration = conductor.duration;
+      performance.now.mockReturnValue(duration * 0.89 * 1000);
+      conductor.tick();
+      const earlyStillness = conductor.getExpression();
+
+      performance.now.mockReturnValue(duration * 0.99 * 1000);
+      conductor.tick();
+      const lateStillness = conductor.getExpression();
+
+      expect(lateStillness.dynamicSwell).toBeLessThan(earlyStillness.dynamicSwell * 0.4);
+      expect(lateStillness.rhythmicEnergy).toBeLessThan(earlyStillness.rhythmicEnergy * 0.4);
+      expect(lateStillness.melodicUrgency).toBeLessThan(earlyStillness.melodicUrgency * 0.4);
+      expect(lateStillness.effectDepth).toBeLessThan(earlyStillness.effectDepth * 0.4);
     });
   });
 

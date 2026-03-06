@@ -604,7 +604,83 @@ canvas#visualizer {
   color: var(--text-dim);
   letter-spacing: 0.08em;
   text-align: center;
-  min-height: 1em;
+  min-height: 1.1em;
+}
+
+.conductor-rail-wrap {
+  position: relative;
+  padding: 0.8rem 0 0.85rem;
+}
+
+.conductor-timeline {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.conductor-phase {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.25s ease;
+}
+
+.conductor-phase.is-complete {
+  background: rgba(120, 160, 255, 0.2);
+}
+
+.conductor-phase.is-current {
+  background: rgba(120, 160, 255, 0.42);
+}
+
+.conductor-phase.is-upcoming {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.conductor-boundary {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateX(-0.5px);
+}
+
+.conductor-playhead {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: rgba(150, 185, 255, 0.95);
+  box-shadow: 0 0 8px rgba(120, 160, 255, 0.45);
+  transform: translateX(-1px);
+  transition: left 0.25s ease;
+}
+
+.conductor-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.56rem;
+  letter-spacing: 0.07em;
+  min-height: 1.1em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: left 0.25s ease;
+}
+
+.conductor-label-current {
+  top: 0;
+  color: var(--text-primary);
+}
+
+.conductor-label-next {
+  bottom: 0;
+  color: var(--text-secondary);
 }
 
 .conductor-personalities {
