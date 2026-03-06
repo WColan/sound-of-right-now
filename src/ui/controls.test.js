@@ -26,6 +26,12 @@ function setupDom() {
 
   const currentLocationBtn = new FakeElement('button', document);
   currentLocationBtn.id = 'current-location-btn';
+  const currentLocationGlyph = new FakeElement('span', document);
+  currentLocationGlyph.textContent = '⌖';
+  const currentLocationLabel = new FakeElement('span', document);
+  currentLocationLabel.textContent = 'current location';
+  currentLocationBtn.appendChild(currentLocationGlyph);
+  currentLocationBtn.appendChild(currentLocationLabel);
 
   const randomLocationBtn = new FakeElement('button', document);
   randomLocationBtn.id = 'random-location-btn';
@@ -130,6 +136,7 @@ describe('createControls', () => {
     await Promise.resolve();
 
     expect(getBrowserLocation).toHaveBeenCalledTimes(1);
+    expect(getBrowserLocation).toHaveBeenCalledWith({ maxAge: 0 });
     expect(reverseGeocode).toHaveBeenCalledWith(37.77, -122.42);
     expect(onLocationSelect).toHaveBeenCalledWith({
       latitude: 37.77,
@@ -139,6 +146,31 @@ describe('createControls', () => {
       country: '',
     });
     expect(searchPanel.classList.contains('hidden')).toBe(true);
+  });
+
+  it('keeps current-location error visible for 3s from the latest failure', async () => {
+    getBrowserLocation.mockResolvedValue(null);
+
+    const { locationBtn, currentLocationBtn } = setupDom();
+    createControls(() => {});
+
+    click(locationBtn);
+    click(currentLocationBtn);
+    await Promise.resolve();
+    expect(currentLocationBtn.classList.contains('location-error')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    click(currentLocationBtn);
+    await Promise.resolve();
+    expect(currentLocationBtn.classList.contains('location-error')).toBe(true);
+
+    // First timer would have elapsed by now, but second failure should keep error active.
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(currentLocationBtn.classList.contains('location-error')).toBe(true);
+
+    // Full timeout since the second failure clears the state.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(currentLocationBtn.classList.contains('location-error')).toBe(false);
   });
 
   it('selects a random location and retries unresolved reverse-geocode names', async () => {

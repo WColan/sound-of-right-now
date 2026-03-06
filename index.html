@@ -6,6 +6,7 @@
   <title>Sound of Now</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SONAR" />
@@ -48,6 +49,7 @@
     <button class="mute-btn" data-voice="texture">tex</button>
     <button class="mute-btn" data-voice="percussion">perc</button>
     <button class="mute-btn" data-voice="drone">drone</button>
+    <button class="mute-btn" data-voice="windChime">chimes</button>
     <button class="mute-btn" data-voice="choir">choir</button>
   </div>
 
@@ -70,6 +72,7 @@
     <button id="mix-btn" class="control-btn menu-item" role="menuitem" aria-label="Mix">mix</button>
     <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Weather details">weather</button>
     <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="Audio details">audio</button>
+    <button id="conductor-btn" class="control-btn menu-item" role="menuitem" aria-label="Conductor">conductor</button>
     <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
     <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">
       <span class="share-label">share</span>
@@ -85,6 +88,23 @@
   <div id="audio-panel" class="info-panel hidden">
     <button class="panel-close" aria-label="Close">×</button>
     <div id="audio-content"></div>
+  </div>
+
+  <div id="conductor-panel" class="conductor-panel hidden">
+    <div class="conductor-status" id="conductor-status"></div>
+    <div class="conductor-rail-wrap">
+      <span class="conductor-label conductor-label-current" id="conductor-current"></span>
+      <div class="conductor-timeline" id="conductor-timeline" aria-hidden="true">
+        <div class="conductor-playhead" id="conductor-playhead"></div>
+      </div>
+      <span class="conductor-label conductor-label-next" id="conductor-next"></span>
+    </div>
+    <div class="conductor-personalities">
+      <button class="personality-btn" data-personality="contemplative">contemplative</button>
+      <button class="personality-btn" data-personality="dramatic">dramatic</button>
+      <button class="personality-btn" data-personality="meditative">meditative</button>
+      <button class="personality-btn" data-personality="restless">restless</button>
+    </div>
   </div>
 
   <div id="location-search" class="location-search hidden">

@@ -302,6 +302,9 @@ export function createSoundEngine() {
   // Melody mood — tracked so bass walking can be triggered on each chord change
   let currentMelodyMood = 'calm';
 
+  // Movement tension level — passed through to generateProgression for harmonic blending
+  let currentMovementTension = 0;
+
   // Microtonal drift — random walk on synth detune AudioParams
   let microtonalInterval = null;
 
@@ -451,7 +454,8 @@ export function createSoundEngine() {
       // Generate a fresh progression with current musical context
       // so the music never loops the exact same sequence
       currentProgression = generateProgression(
-        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+        currentMovementTension
       );
       return currentProgression;
     },
@@ -564,6 +568,17 @@ export function createSoundEngine() {
     },
 
     /**
+     * Set the movement tension level for harmonic blending.
+     * Affects future chord progressions (blends Markov weights toward 'tense').
+     * Called by the conductor via main.js on each expression tick.
+     *
+     * @param {number} level - 0 (weather baseline) to 1 (full tension)
+     */
+    setMovementTension(level) {
+      currentMovementTension = Math.max(0, Math.min(1, level));
+    },
+
+    /**
      * Update celestial context used by melody for golden-hour / full-moon
      * phrase probability boosts. Called from main.js on each weather update.
      */
@@ -653,7 +668,8 @@ export function createSoundEngine() {
 
       // ── Generate initial chord progression ──
       currentProgression = generateProgression(
-        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+        currentMovementTension
       );
       progressionPlayer.setProgression(currentProgression, true);
       // Note: the progression player's onChordChange callback will handle
@@ -710,6 +726,13 @@ export function createSoundEngine() {
         currentMelodyMood = melodyMood;
       }
       melody.synth.volume.value = melodyVolume ?? -20;
+
+      // Wind chime — volume + activation (must be after progression starts so
+      // setNotes() has populated the note pool via onChordChange).
+      const wcVol = params.windChimeVolume ?? -80;
+      windChime.output.volume.value = wcVol;
+      windChimeWasActive = wcVol > -70;
+      windChime.setActive(windChimeWasActive);
 
       // Choir — formant-filtered sustained chords
       choir.setVolume(params.choirVolume ?? -18, 0);
@@ -846,7 +869,8 @@ export function createSoundEngine() {
         case 'pressureNorm': {
           currentPressureNorm = value;
           currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+            currentMovementTension
           );
           progressionPlayer.setProgression(currentProgression, false); // Queue for next cycle
           break;
@@ -870,7 +894,8 @@ export function createSoundEngine() {
 
           // Generate a new progression in the new key
           currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+            currentMovementTension
           );
           // Key/mode changes are musically significant — start immediately
           progressionPlayer.setProgression(currentProgression, true);
@@ -882,7 +907,8 @@ export function createSoundEngine() {
           currentWeatherCategory = value;
           const immediate = shouldImmediatelyChange(oldCategory, value);
           currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm
+            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+            currentMovementTension
           );
           progressionPlayer.setProgression(currentProgression, immediate);
           break;

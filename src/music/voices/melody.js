@@ -56,6 +56,7 @@ export function createMelodyVoice() {
   let currentMood = 'calm';
   let phraseEvents = []; // Track scheduled events for cleanup
   let lastNoteMidi = 67; // G4 — starting reference point
+  let externalProbabilityScale = 1.0; // Movement conductor scaling
 
   /**
    * Pick the next note for a phrase using weighted selection + stepwise preference.
@@ -98,7 +99,10 @@ export function createMelodyVoice() {
    */
   function generatePhrase(probabilityBoost = 0) {
     const config = MOOD_CONFIG[currentMood] || MOOD_CONFIG.calm;
-    const effectiveProbability = Math.min(config.probability + probabilityBoost, 0.95);
+    const effectiveProbability = Math.min(
+      (config.probability + probabilityBoost) * externalProbabilityScale,
+      0.95,
+    );
 
     // Roll probability check
     if (Math.random() > effectiveProbability) return;
@@ -196,6 +200,15 @@ export function createMelodyVoice() {
       }, Tone.now() + delaySec);
 
       phraseEvents.push(eventId);
+    },
+
+    /**
+     * Set the external probability scale (from movement conductor).
+     * Multiplies the mood's base probability — 1.0 = no change, 1.6 = boosted.
+     * @param {number} scale - 0 to 2
+     */
+    setProbabilityScale(scale) {
+      externalProbabilityScale = Math.max(0, Math.min(2, scale));
     },
 
     setVolume(db, rampTime = 8) {

@@ -417,6 +417,11 @@ canvas#visualizer {
   cursor: wait;
 }
 
+.current-location-btn.location-error {
+  color: rgba(255, 120, 120, 0.9);
+  border-color: rgba(255, 120, 120, 0.4);
+}
+
 .current-location-glyph {
   font-size: 0.82rem;
   line-height: 1;
@@ -571,6 +576,142 @@ canvas#visualizer {
   color: var(--text-dim);
   border-color: rgba(255, 255, 255, 0.08);
   text-decoration: line-through;
+}
+
+/* Conductor panel */
+.conductor-panel {
+  --conductor-label-slide-ms: 1200ms;
+  position: fixed;
+  bottom: 5rem;
+  right: 2rem;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: rgba(10, 10, 15, 0.85);
+  padding: 0.5rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: opacity 0.3s ease;
+}
+
+.conductor-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.conductor-status {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-align: center;
+  min-height: 1.1em;
+}
+
+.conductor-rail-wrap {
+  position: relative;
+  padding: 0.8rem 0 0.85rem;
+}
+
+.conductor-timeline {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.conductor-phase {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.25s ease;
+}
+
+.conductor-phase.is-complete {
+  background: rgba(120, 160, 255, 0.2);
+}
+
+.conductor-phase.is-current {
+  background: rgba(120, 160, 255, 0.42);
+}
+
+.conductor-phase.is-upcoming {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.conductor-boundary {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateX(-0.5px);
+}
+
+.conductor-playhead {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: rgba(150, 185, 255, 0.95);
+  box-shadow: 0 0 8px rgba(120, 160, 255, 0.45);
+  transform: translateX(-1px);
+  will-change: left;
+  transition: left 0.06s linear;
+}
+
+.conductor-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.56rem;
+  letter-spacing: 0.07em;
+  min-height: 1.1em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: left var(--conductor-label-slide-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.conductor-label-current {
+  top: 0;
+  color: var(--text-primary);
+}
+
+.conductor-label-next {
+  bottom: 0;
+  color: var(--text-secondary);
+}
+
+.conductor-personalities {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.personality-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.personality-btn:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--text-primary);
+}
+
+.personality-btn.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: rgba(120, 160, 255, 0.08);
 }
 
 /* Shared info panel (weather, audio) */
@@ -735,6 +876,25 @@ canvas#visualizer {
     width: calc(100vw - 3rem);
     min-width: 0;
     z-index: 19;
+  }
+
+  /* Conductor panel: full-width bottom bar on mobile */
+  .conductor-panel {
+    bottom: 1.5rem;
+    right: 0;
+    left: 0;
+    transform: none;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    z-index: 16;
+  }
+
+  .conductor-personalities {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   /* Mix panel: full-width bottom bar on mobile */

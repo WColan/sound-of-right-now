@@ -224,15 +224,46 @@ export function createControls(onLocationSelect) {
   });
 
   if (currentLocationBtn) {
+    const locationSpans = currentLocationBtn.querySelectorAll('span');
+    const currentLocationLabel = locationSpans.length > 0
+      ? locationSpans[locationSpans.length - 1]
+      : null;
+    let currentLocationErrorTimeout = null;
+
+    function clearCurrentLocationError() {
+      if (currentLocationErrorTimeout) {
+        clearTimeout(currentLocationErrorTimeout);
+        currentLocationErrorTimeout = null;
+      }
+      if (currentLocationLabel) currentLocationLabel.textContent = 'current location';
+      currentLocationBtn.classList.remove('location-error');
+    }
+
+    function setCurrentLocationError(msg) {
+      clearCurrentLocationError();
+      if (currentLocationLabel) currentLocationLabel.textContent = msg;
+      currentLocationBtn.classList.add('location-error');
+      currentLocationErrorTimeout = setTimeout(() => {
+        currentLocationErrorTimeout = null;
+        clearCurrentLocationError();
+      }, 3000);
+    }
+
     currentLocationBtn.addEventListener('click', async () => {
       if (!isOpen) return;
       const requestId = ++latestCurrentLocationRequestId;
       currentLocationBtn.setAttribute('aria-busy', 'true');
 
       try {
-        const browserLocation = await getBrowserLocation();
-        if (!browserLocation) return;
+        // maxAge: 0 forces a fresh GPS fix — the user explicitly wants their
+        // current position, not a cached result from the startup geolocation.
+        const browserLocation = await getBrowserLocation({ maxAge: 0 });
         if (!isOpen || requestId !== latestCurrentLocationRequestId) return;
+        if (!browserLocation) {
+          setCurrentLocationError('location unavailable');
+          return;
+        }
+        clearCurrentLocationError();
 
         const resolvedName = await reverseGeocode(browserLocation.latitude, browserLocation.longitude);
         if (!isOpen || requestId !== latestCurrentLocationRequestId) return;
