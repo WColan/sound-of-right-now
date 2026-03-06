@@ -223,8 +223,8 @@ export function createMovementConductor() {
       return name;
     }
 
-    if (movementNumber === 0) {
-      // First movement — pick from weather
+    if (movementNumber === 1) {
+      // First movement (already incremented by startMovement) — pick from weather
       return WEATHER_PERSONALITY[weatherCategory] || 'contemplative';
     }
 
