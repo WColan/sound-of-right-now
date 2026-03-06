@@ -28,7 +28,11 @@ export function handleMainKeydown(event, {
       secondaryMenuController?.close?.();
       weatherPanel?.classList.add('hidden');
       audioPanel?.classList.add('hidden');
-      conductorPanel?.classList.add('hidden');
+      if (conductorPanel && !conductorPanel.classList.contains('hidden') && toggleConductorPanel) {
+        toggleConductorPanel();
+      } else {
+        conductorPanel?.classList.add('hidden');
+      }
       break;
     case 'l':
     case 'L':

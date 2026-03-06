@@ -4,7 +4,7 @@ import { createSoundEngine } from './music/engine.js';
 import { mapWeatherToMusic } from './music/mapper.js';
 import { createInterpolator } from './music/interpolator.js';
 import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
-import { buildShareSearch, parseSharedCoordinates } from './weather/share.js';
+import { buildShareSearch, parseSharedCoordinates, resolveStartupLocation } from './weather/share.js';
 import { getMoonriseTime, getMoonsetTime, getMoonPhaseName } from './weather/moon.js';
 import { describeWeatherCode } from './weather/codes.js';
 import { getSeasonName } from './weather/season.js';
@@ -1006,26 +1006,21 @@ function init() {
       display = createDisplay(); // Temp display for loading message
       display.setLocation('Finding your location...');
 
-      // Check for permalink ?lat=&lng= params — shared link takes priority when
-      // geolocation is unavailable, but fresh geolocation always wins if accessible.
-      // We do NOT write coords back to the URL for geolocation boots so that
-      // returning to the page (or tab restore) never re-uses stale coords.
+      // Check for permalink ?lat=&lng= params — shared links are authoritative.
+      // If present, boot directly into the shared coordinates.
       const sharedCoords = parseSharedCoordinates(window.location.search);
       history.replaceState(null, '', window.location.pathname);
 
-      const browserLoc = await getBrowserLocation();
-      if (browserLoc) {
-        // Always prefer real geolocation — ignore any URL params from a previous
-        // session or a shared link the user received (updateUrl: false keeps URL clean).
-        await boot(browserLoc.latitude, browserLoc.longitude, null, { updateUrl: false });
-      } else if (sharedCoords) {
-        // Geolocation denied/unavailable — honour the shared link coordinates.
-        // updateUrl: true so the share button and refresh still point to this location.
-        await boot(sharedCoords.latitude, sharedCoords.longitude, null, { updateUrl: true });
-      } else {
-        // Final fallback: New York
-        await boot(40.7128, -74.006, 'New York, NY', { updateUrl: false });
-      }
+      // Avoid unnecessary geolocation prompt for shared links.
+      const browserLoc = sharedCoords ? null : await getBrowserLocation();
+      const startupLocation = resolveStartupLocation({
+        sharedCoords,
+        browserLocation: browserLoc,
+      });
+
+      await boot(startupLocation.latitude, startupLocation.longitude, startupLocation.locationName, {
+        updateUrl: startupLocation.updateUrl,
+      });
 
       // Startup succeeded; remove one-time overlay keyboard shortcuts.
       overlayShortcutController?.dispose();

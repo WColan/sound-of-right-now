@@ -54,6 +54,8 @@ describe('handleMainKeydown', () => {
   it('closes weather/audio/conductor on Escape', () => {
     const { weatherPanel, audioPanel, conductorPanel, canvas } = setupDom();
     const secondaryMenuController = { close: vi.fn() };
+    const toggleConductorPanel = vi.fn();
+    conductorPanel.classList.remove('hidden');
 
     handleMainKeydown(new FakeEvent('keydown', { key: 'Escape', bubbles: true }), {
       isEngineReady: true,
@@ -62,12 +64,28 @@ describe('handleMainKeydown', () => {
       weatherPanel,
       audioPanel,
       conductorPanel,
+      toggleConductorPanel,
       canvas,
     });
 
     expect(secondaryMenuController.close).toHaveBeenCalledTimes(1);
     expect(weatherPanel.classList.contains('hidden')).toBe(true);
     expect(audioPanel.classList.contains('hidden')).toBe(true);
+    expect(toggleConductorPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides conductor directly on Escape when toggle callback is missing', () => {
+    const { weatherPanel, audioPanel, conductorPanel, canvas } = setupDom();
+
+    handleMainKeydown(new FakeEvent('keydown', { key: 'Escape', bubbles: true }), {
+      isEngineReady: true,
+      activeTagName: null,
+      weatherPanel,
+      audioPanel,
+      conductorPanel,
+      canvas,
+    });
+
     expect(conductorPanel.classList.contains('hidden')).toBe(true);
   });
 
