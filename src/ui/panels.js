@@ -145,6 +145,7 @@ export function setupInfoPanels({
   function hideConductorPanel() {
     conductorPanel?.classList.add('hidden');
     stopConductorRefresh();
+    document.body?.classList.remove('conductor-open');
   }
 
   function hideWeatherPanel() {
@@ -249,6 +250,8 @@ export function setupInfoPanels({
     hideWeatherPanel();
     hideAudioPanel();
     conductorPanel.classList.toggle('hidden');
+    const isOpen = !conductorPanel.classList.contains('hidden');
+    document.body?.classList.toggle('conductor-open', isOpen);
     if (conductorPanel.classList.contains('hidden')) {
       stopConductorRefresh();
     } else {
@@ -294,6 +297,7 @@ export function setupInfoPanels({
       conductorNext.style.left = '4%';
     }
     stopConductorRefresh();
+    document.body?.classList.remove('conductor-open');
   }
 
   return {
@@ -304,6 +308,7 @@ export function setupInfoPanels({
     updateConductorUI,
     dispose() {
       stopConductorRefresh();
+      document.body?.classList.remove('conductor-open');
       listeners.forEach(({ node, event, handler }) => {
         node.removeEventListener(event, handler);
       });

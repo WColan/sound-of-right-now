@@ -770,6 +770,10 @@ canvas#visualizer {
 
 /* ── Mobile layout ── */
 @media (max-width: 600px) {
+  :root {
+    --mobile-bottom-panel-offset: 8.5rem;
+  }
+
   .overlay-content {
     max-width: 380px;
     padding: 1.72rem;
@@ -880,7 +884,7 @@ canvas#visualizer {
 
   /* Conductor panel: full-width bottom bar on mobile */
   .conductor-panel {
-    bottom: 1.5rem;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 0.6rem);
     right: 0;
     left: 0;
     transform: none;
@@ -899,7 +903,7 @@ canvas#visualizer {
 
   /* Mix panel: full-width bottom bar on mobile */
   .mute-panel {
-    bottom: 1.5rem;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 0.6rem);
     right: 0;
     left: 0;
     transform: none;
@@ -912,17 +916,20 @@ canvas#visualizer {
     z-index: 16;
   }
 
-  /* When mix panel is open, push info + chord + controls up */
-  body.mix-open .controls {
-    transform: translateX(-50%) translateY(-3rem);
+  /* When bottom utility panels are open, lift UI above them. */
+  body.mix-open .controls,
+  body.conductor-open .controls {
+    transform: translateX(-50%) translateY(calc(-1 * var(--mobile-bottom-panel-offset)));
   }
 
-  body.mix-open .info-display {
-    transform: translateX(-50%) translateY(-3rem);
+  body.mix-open .info-display,
+  body.conductor-open .info-display {
+    transform: translateX(-50%) translateY(calc(-1 * var(--mobile-bottom-panel-offset)));
   }
 
-  body.mix-open .chord-display {
-    transform: translateX(-50%) translateY(-3rem);
+  body.mix-open .chord-display,
+  body.conductor-open .chord-display {
+    transform: translateX(-50%) translateY(calc(-1 * var(--mobile-bottom-panel-offset)));
   }
 
   /* Info panels on mobile */
