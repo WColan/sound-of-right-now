@@ -17,6 +17,7 @@ import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { classifyBiome } from './weather/biome.js';
+import { createMovementConductor, CONDUCTOR_ENABLED } from './music/movement.js';
 import { VERSION } from './version.js';
 
 // Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
@@ -36,6 +37,8 @@ let tideFetcher = null;
 let aqiFetcher = null;
 let display = null;
 let visualizer = null;
+let movementConductor = null;
+let conductorTickInterval = null;
 let currentTideData = null;
 let currentAqiData = null;
 let currentLatitude = null;
@@ -45,6 +48,15 @@ let isPlaying = true; // Track play/pause state for the pause button
 let currentLocationRequestId = 0;
 let userVolumeScale = 0.8;
 let secondaryMenuController = null;
+
+// ── Voice volume param mapping (module-level for applyExpression access) ──
+const VOICE_VOLUME_PARAMS_MAP = {
+  pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
+  melody: 'melodyVolume', texture: 'textureVolume',
+  percussion: 'percussionVolume', drone: 'droneVolume',
+  windChime: 'windChimeVolume', choir: 'choirVolume',
+};
+let mutedVoiceTracker = null; // Set reference, assigned in boot()
 
 // ── Pressure trend buffer ──
 // Rolling window of the last 3 pressure readings (timestamp + value).
@@ -83,6 +95,118 @@ function computeAuroraIntensity(lat, brightness, cloudCover) {
   return latFactor * darkFactor * clearFactor;
 }
 
+// ── Expression swell ranges (additive dB per voice at full intensity) ──
+const SWELL_RANGES = {
+  padVolume: 4, arpeggioVolume: 6, bassVolume: 3, textureVolume: 4,
+  percussionVolume: 4, droneVolume: 3, melodyVolume: 5, choirVolume: 4,
+  windChimeVolume: 3,
+};
+
+/**
+ * Apply movement expression on top of weather baselines.
+ * Reads the interpolator's currentParams for weather values and adds
+ * expression offsets using the engine's rampParam API.
+ *
+ * When CONDUCTOR_ENABLED is false, this is a no-op.
+ *
+ * @param {object} expression - From movementConductor.getExpression()
+ * @param {number} rampTime - Seconds to ramp (smooth transitions)
+ */
+function applyExpression(expression, rampTime = 5) {
+  if (!CONDUCTOR_ENABLED || !engine || !interpolator) return;
+
+  const params = interpolator.currentParams;
+  if (!params) return;
+
+  const { dynamicSwell, harmonicTension, rhythmicEnergy, melodicUrgency, effectDepth } = expression;
+
+  // ── Voice volumes: additive dB swell ──
+  const mutedVoicesSet = mutedVoiceTracker;
+  for (const [paramKey, maxSwell] of Object.entries(SWELL_RANGES)) {
+    const baseline = params[paramKey];
+    if (baseline == null) continue;
+
+    // Find voice name from param key
+    const voiceName = Object.entries(VOICE_VOLUME_PARAMS_MAP).find(([, p]) => p === paramKey)?.[0];
+    if (voiceName && mutedVoicesSet?.has(voiceName)) continue; // Don't swell muted voices
+
+    const swellDb = dynamicSwell * maxSwell;
+    engine.rampParam(paramKey, baseline + swellDb, rampTime);
+  }
+
+  // ── Melody: extra swell + probability scaling ──
+  if (engine.voices?.melody) {
+    engine.voices.melody.setProbabilityScale(1 + melodicUrgency * 0.6);
+  }
+
+  // ── Harmonic tension ──
+  engine.setMovementTension(harmonicTension);
+
+  // ── Rhythm: density boost ──
+  const baseDensity = params.rhythmDensity ?? 0.2;
+  const boostedDensity = Math.min(1, baseDensity * (1 + rhythmicEnergy * 0.8));
+  engine.rampParam('rhythmDensity', boostedDensity, rampTime);
+
+  // ── Effects: reverb, chorus, delay, filter ──
+  const baseReverbWet = params.reverbWet ?? 0.3;
+  engine.rampParam('reverbWet', Math.min(0.7, baseReverbWet + effectDepth * 0.15), rampTime);
+
+  const baseChorusDepth = params.chorusDepth ?? 0.5;
+  engine.rampParam('chorusDepth', Math.min(0.9, baseChorusDepth + effectDepth * 0.2), rampTime);
+
+  const baseDelayFeedback = params.delayFeedback ?? 0.2;
+  engine.rampParam('delayFeedback', Math.min(0.5, baseDelayFeedback + effectDepth * 0.1), rampTime);
+
+  // Master filter opens during expression swell
+  const baseMasterFilter = params.masterFilterCutoff ?? 8000;
+  engine.rampParam('masterFilterCutoff', Math.min(16000, baseMasterFilter * (1 + effectDepth * 0.4)), rampTime);
+
+  // Spatial width expands during swell
+  const baseArpWidth = params.arpeggioWidth ?? 0.4;
+  engine.rampParam('arpeggioWidth', Math.min(1, baseArpWidth + effectDepth * 0.2), rampTime);
+  const baseMelWidth = params.melodyWidth ?? 0.3;
+  engine.rampParam('melodyWidth', Math.min(1, baseMelWidth + effectDepth * 0.15), rampTime);
+
+  // ── Microtonal: activate when harmonicTension is high ──
+  if (harmonicTension > 0.6 && engine.updateMicrotonalContext) {
+    // Force microtonal on during high tension regardless of weather
+    engine.updateMicrotonalContext('fog', 0, 0); // 'fog' triggers microtonal
+  }
+
+  // Log expression state periodically
+  const phase = movementConductor?.getCurrentPhase();
+  if (phase) {
+    console.log(
+      `🎼 Expression: ${phase.name} (mvt #${phase.movementNumber} ${phase.personality}) ` +
+      `intensity=${expression.intensity.toFixed(2)} swell=${dynamicSwell.toFixed(2)} ` +
+      `tension=${harmonicTension.toFixed(2)} rhythm=${rhythmicEnergy.toFixed(2)} ` +
+      `melody=${melodicUrgency.toFixed(2)} fx=${effectDepth.toFixed(2)}`
+    );
+  }
+}
+
+/**
+ * Start the conductor tick interval.
+ * Ticks every 8 seconds for smooth expression between 60s weather polls.
+ */
+function startConductorTick() {
+  stopConductorTick();
+  if (!CONDUCTOR_ENABLED || !movementConductor) return;
+
+  conductorTickInterval = setInterval(() => {
+    if (!isPlaying || !movementConductor) return;
+    movementConductor.tick();
+    applyExpression(movementConductor.getExpression(), 5);
+  }, 8000);
+}
+
+function stopConductorTick() {
+  if (conductorTickInterval) {
+    clearInterval(conductorTickInterval);
+    conductorTickInterval = null;
+  }
+}
+
 // Clean up on HMR to prevent duplicate audio contexts
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
@@ -92,6 +216,7 @@ if (import.meta.hot) {
     if (aqiFetcher) aqiFetcher.stop();
     if (visualizer) visualizer.dispose();
     if (secondaryMenuController) secondaryMenuController.dispose();
+    stopConductorTick();
   });
 }
 
@@ -113,6 +238,11 @@ function onWeatherUpdate(weather) {
 
   interpolator.update(musicalParams);
   display.update(weather, musicalParams, currentTideData, currentAqiData);
+
+  // Update conductor weather context for personality selection
+  if (CONDUCTOR_ENABLED && movementConductor) {
+    movementConductor.setWeatherContext(musicalParams._meta.category);
+  }
 
   // Compute moonrise/moonset from phase + today's sunrise/sunset
   const now = new Date();
@@ -284,6 +414,12 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
     engine.setSleepGainScale(1, 0);
     // Recreate interpolator too — it closes over the old (now-disposed) engine
     interpolator = createInterpolator(engine);
+    // Reset conductor for fresh location — new movement arc begins
+    if (CONDUCTOR_ENABLED && movementConductor) {
+      movementConductor.reset();
+      movementConductor.resume();
+      startConductorTick();
+    }
     // New engine always starts playing — reset pause button accordingly
     isPlaying = true;
     const pb = document.getElementById('pause-btn');
@@ -380,6 +516,11 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   engine = createSoundEngine();
   interpolator = createInterpolator(engine);
 
+  // Create movement conductor
+  if (CONDUCTOR_ENABLED) {
+    movementConductor = createMovementConductor();
+  }
+
   // Create UI
   display = createDisplay();
   createControls(async (result) => {
@@ -407,8 +548,10 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   pauseBtn.addEventListener('click', () => {
     if (isPlaying) {
       engine.stop();
+      if (CONDUCTOR_ENABLED && movementConductor) movementConductor.pause();
     } else {
       engine.resume();
+      if (CONDUCTOR_ENABLED && movementConductor) movementConductor.resume();
     }
     isPlaying = !isPlaying;
     setPauseButtonState(isPlaying);
@@ -479,6 +622,7 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
         sleepFadeTimeout = setTimeout(() => {
           if (engine) engine.stop();
           if (engine) engine.setSleepGainScale(1, 0);
+          if (CONDUCTOR_ENABLED && movementConductor) movementConductor.pause();
           isPlaying = false;
           setPauseButtonState(false);
           sleepIndex = 0;
@@ -491,13 +635,9 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   // Wire mute panel — per-voice mute toggles
   const mutePanel = document.getElementById('mute-panel');
   const mixBtn = document.getElementById('mix-btn');
-  const VOICE_VOLUME_PARAMS = {
-    pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
-    melody: 'melodyVolume', texture: 'textureVolume',
-    percussion: 'percussionVolume', drone: 'droneVolume',
-    windChime: 'windChimeVolume', choir: 'choirVolume',
-  };
+  const VOICE_VOLUME_PARAMS = VOICE_VOLUME_PARAMS_MAP;
   const mutedVoices = new Set();
+  mutedVoiceTracker = mutedVoices; // Expose to module-level applyExpression
 
   if (mixBtn && mutePanel) {
     mixBtn.addEventListener('click', () => {
@@ -515,7 +655,13 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
       if (mutedVoices.has(voice)) {
         mutedVoices.delete(voice);
         btn.classList.remove('muted');
-        const savedVol = interpolator.currentParams?.[param] ?? 0;
+        let savedVol = interpolator.currentParams?.[param] ?? 0;
+        // Add expression swell offset if conductor is active
+        if (CONDUCTOR_ENABLED && movementConductor) {
+          const expr = movementConductor.getExpression();
+          const maxSwell = SWELL_RANGES[param] ?? 0;
+          savedVol += expr.dynamicSwell * maxSwell;
+        }
         engine.rampParam(param, savedVol, 1);
       } else {
         mutedVoices.add(voice);
@@ -673,7 +819,13 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     };
 
     shareBtn.addEventListener('click', async () => {
-      const url = window.location.href;
+      // Construct the share URL from the current loaded coordinates.
+      // We can't rely on window.location.href because geolocation-based loads
+      // intentionally skip writing coords to the URL (updateUrl: false).
+      const shareSearch = buildShareSearch(currentLatitude, currentLongitude);
+      const url = shareSearch
+        ? window.location.origin + window.location.pathname + shareSearch
+        : window.location.href;
       let copied = false;
       try {
         if (navigator.clipboard?.writeText) {
@@ -763,6 +915,12 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
 
   // Connect to real weather data — fade in on first load so audio swells in gently
   await startForLocation(latitude, longitude, locationName, { fadeIn: true, updateUrl });
+
+  // Start the movement conductor after weather connects
+  if (CONDUCTOR_ENABLED && movementConductor) {
+    movementConductor.resume();
+    startConductorTick();
+  }
 }
 
 /**
