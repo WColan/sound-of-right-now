@@ -201,9 +201,7 @@ export function setupInfoPanels({
     }
 
     if (conductorStatus) {
-      conductorStatus.textContent = phase.name !== 'inactive'
-        ? `mvt. ${phase.movementNumber} | listening for ${formatListeningDuration(phase.listeningSeconds)}`
-        : 'inactive';
+      conductorStatus.textContent = `listening for ${formatListeningDuration(phase.listeningSeconds)}`;
     }
 
     const progress = clamp01(phase.progress ?? 0);

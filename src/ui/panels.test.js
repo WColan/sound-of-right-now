@@ -154,7 +154,7 @@ describe('setupInfoPanels', () => {
     });
 
     controls.toggleConductorPanel();
-    expect(dom.conductorStatus.textContent).toBe('mvt. 2 | listening for 1h10m');
+    expect(dom.conductorStatus.textContent).toBe('listening for 1h10m');
     expect(dom.conductorCurrent.textContent).toBe('building');
     expect(dom.conductorCurrent.style.left).toBe('49.00%');
     expect(dom.conductorNext.textContent).toBe('climax');
@@ -192,7 +192,7 @@ describe('setupInfoPanels', () => {
     };
     movementChangeCb();
     phaseChangeCb();
-    expect(dom.conductorStatus.textContent).toBe('mvt. 3 | listening for 1h31m');
+    expect(dom.conductorStatus.textContent).toBe('listening for 1h31m');
     expect(dom.conductorCurrent.textContent).toBe('stillness');
     expect(dom.conductorCurrent.style.left).toBe('94.00%');
     expect(dom.conductorNext.textContent).toBe('');
@@ -250,15 +250,15 @@ describe('setupInfoPanels', () => {
     });
 
     controls.toggleConductorPanel();
-    expect(dom.conductorStatus.textContent).toBe('mvt. 1 | listening for 10m');
+    expect(dom.conductorStatus.textContent).toBe('listening for 10m');
 
     phase.listeningSeconds = 720;
     vi.advanceTimersByTime(120000);
-    expect(dom.conductorStatus.textContent).toBe('mvt. 1 | listening for 10m');
+    expect(dom.conductorStatus.textContent).toBe('listening for 10m');
 
     movementConductor.isPaused = false;
     vi.advanceTimersByTime(30000);
-    expect(dom.conductorStatus.textContent).toBe('mvt. 1 | listening for 12m');
+    expect(dom.conductorStatus.textContent).toBe('listening for 12m');
 
     controls.dispose();
     vi.useRealTimers();
