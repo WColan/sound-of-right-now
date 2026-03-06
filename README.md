@@ -9,10 +9,10 @@ Open the app, share your location (or search for any city, or try a random locat
 Real-time environmental data is fetched from public APIs and mapped through a pure-function music pipeline:
 
 ```
-[Weather APIs] -> [Mapper] -> [Interpolator] -> [Sound Engine] -> [Audio Output]
-                                                    |
-                                                    v
-                                               [Visualizer]
+[Weather APIs] -> [Mapper] -> [Interpolator] -> [Movement Conductor] -> [Sound Engine] -> [Audio Output]
+                                                                         |
+                                                                         v
+                                                                    [Visualizer]
 ```
 
 Core mappings:
@@ -30,6 +30,18 @@ Core mappings:
 - **Season + latitude** add hemisphere-aware seasonal modulation (oscillator types, envelope profiles, filter warmth shift per season).
 - **UV index** opens arpeggio brightness and can trigger microtonal drift context.
 - **Biome** (land cover from OpenStreetMap) adjusts reverb wetness, master filter cutoff, and pad harmonic spread per terrain type.
+
+## Movement Conductor
+
+The app now includes a movement-level **Conductor** layer that shapes long-form phrasing above the weather mappings.
+
+- Each movement follows a phase arc: **breathing -> stirring -> building -> climax -> descent -> stillness**.
+- Movements rotate personalities (contemplative, dramatic, meditative, restless), including contrast-based personality changes between movements.
+- Expression dimensions (swell, tension, rhythm, melody urgency, effects depth) evolve continuously through each movement.
+- The conductor panel includes a **duration-proportional phase rail** with boundary ticks and a continuously advancing playhead.
+- Phase labels are minimal and positional: current phase above the rail, next phase below (suppressed at terminal stillness).
+- A compact **listening duration counter** is shown in the panel header.
+- Personality buttons allow live movement personality overrides from the panel.
 
 ## Voices
 
@@ -116,6 +128,7 @@ UI controls include:
 - Mix panel (per-voice mute toggles; pushes content up on mobile)
 - Weather detail panel (temperature, conditions, humidity, wind, pressure, cloud cover, UV, AQI, sunrise/sunset, moon phase, season, biome, tide)
 - Audio mappings panel (source → output: e.g., "72°F → D Minor", "78% humidity → 6.2s reverb")
+- Conductor panel (movement timeline rail, smooth playhead, phase labels, listening duration counter, personality override buttons)
 - Sleep timer (off/30/60/90 with 60s fade-out)
 - Share link (lat/lng permalink copy)
 - Info display: location + local time + curated blend line (temp, condition, key, BPM)
