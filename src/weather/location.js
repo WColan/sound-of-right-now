@@ -26,8 +26,11 @@ function getUSStateLabel(data) {
 /**
  * Get the user's current location via browser geolocation.
  * Returns { latitude, longitude, name } or null if denied/unavailable.
+ * @param {object} options
+ * @param {number} [options.maxAge=300000] - Max cached position age in ms.
+ *   Pass 0 to force a fresh GPS fix (e.g. when the user explicitly requests it).
  */
-export function getBrowserLocation() {
+export function getBrowserLocation({ maxAge = 300000 } = {}) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
@@ -45,7 +48,7 @@ export function getBrowserLocation() {
       () => {
         resolve(null);
       },
-      { timeout: 10000, maximumAge: 300000 }
+      { timeout: 10000, maximumAge: maxAge }
     );
   });
 }

@@ -72,6 +72,7 @@
     <button id="mix-btn" class="control-btn menu-item" role="menuitem" aria-label="Mix">mix</button>
     <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Weather details">weather</button>
     <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="Audio details">audio</button>
+    <button id="conductor-btn" class="control-btn menu-item" role="menuitem" aria-label="Conductor">conductor</button>
     <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
     <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">
       <span class="share-label">share</span>
@@ -87,6 +88,16 @@
   <div id="audio-panel" class="info-panel hidden">
     <button class="panel-close" aria-label="Close">×</button>
     <div id="audio-content"></div>
+  </div>
+
+  <div id="conductor-panel" class="conductor-panel hidden">
+    <div class="conductor-status" id="conductor-status"></div>
+    <div class="conductor-personalities">
+      <button class="personality-btn" data-personality="contemplative">contemplative</button>
+      <button class="personality-btn" data-personality="dramatic">dramatic</button>
+      <button class="personality-btn" data-personality="meditative">meditative</button>
+      <button class="personality-btn" data-personality="restless">restless</button>
+    </div>
   </div>
 
   <div id="location-search" class="location-search hidden">

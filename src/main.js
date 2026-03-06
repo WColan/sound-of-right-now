@@ -15,7 +15,9 @@ import { createAirQualityFetcher } from './weather/airquality.js';
 import { createDisplay } from './ui/display.js';
 import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
+import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
+import { handleMainKeydown } from './ui/shortcuts.js';
 import { classifyBiome } from './weather/biome.js';
 import { createMovementConductor, CONDUCTOR_ENABLED } from './music/movement.js';
 import { VERSION } from './version.js';
@@ -781,30 +783,31 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
 
   let toggleWeatherPanel = null;
   let toggleAudioPanel = null;
+  let toggleConductorPanel = null;
 
-  if (weatherPanel && weatherContent) {
-    toggleWeatherPanel = () => {
-      audioPanel?.classList.add('hidden');
-      weatherContent.innerHTML = buildWeatherText();
-      weatherPanel.classList.toggle('hidden');
-    };
-    weatherMenuBtn?.addEventListener('click', toggleWeatherPanel);
-  }
-  if (weatherClose) {
-    weatherClose.addEventListener('click', () => weatherPanel.classList.add('hidden'));
-  }
-
-  if (audioPanel && audioContent) {
-    toggleAudioPanel = () => {
-      weatherPanel?.classList.add('hidden');
-      audioContent.innerHTML = buildAudioText();
-      audioPanel.classList.toggle('hidden');
-    };
-    audioMenuBtn?.addEventListener('click', toggleAudioPanel);
-  }
-  if (audioClose) {
-    audioClose.addEventListener('click', () => audioPanel.classList.add('hidden'));
-  }
+  const conductorPanel = document.getElementById('conductor-panel');
+  const conductorStatus = document.getElementById('conductor-status');
+  const conductorMenuBtn = document.getElementById('conductor-btn');
+  const panelControls = setupInfoPanels({
+    weatherPanel,
+    weatherContent,
+    weatherClose,
+    weatherMenuBtn,
+    buildWeatherText,
+    audioPanel,
+    audioContent,
+    audioClose,
+    audioMenuBtn,
+    buildAudioText,
+    conductorPanel,
+    conductorStatus,
+    conductorMenuBtn,
+    movementConductor,
+    conductorEnabled: CONDUCTOR_ENABLED,
+  });
+  toggleWeatherPanel = panelControls.toggleWeatherPanel;
+  toggleAudioPanel = panelControls.toggleAudioPanel;
+  toggleConductorPanel = panelControls.toggleConductorPanel;
 
   // Wire share button — copies current location permalink to clipboard
   const shareBtn = document.getElementById('share-btn');
@@ -849,35 +852,21 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
 
   // ── Keyboard shortcuts ──
   document.addEventListener('keydown', (e) => {
-    if (!engine) return;
-    if (document.activeElement.tagName === 'INPUT') return; // Don't intercept typing
-    switch (e.key) {
-      case ' ':
-        e.preventDefault();
-        pauseBtn.click();
-        break;
-      case 'Escape':
-        secondaryMenuController?.close();
-        weatherPanel?.classList.add('hidden');
-        audioPanel?.classList.add('hidden');
-        break;
-      case 'l': case 'L':
-        e.preventDefault();
-        document.getElementById('location-btn')?.click();
-        break;
-      case 'm': case 'M':
-        mixBtn?.click();
-        break;
-      case 'w': case 'W':
-        toggleWeatherPanel?.();
-        break;
-      case 'a': case 'A':
-        toggleAudioPanel?.();
-        break;
-      case 'f': case 'F':
-        canvas.requestFullscreen?.();
-        break;
-    }
+    handleMainKeydown(e, {
+      isEngineReady: Boolean(engine),
+      activeTagName: document.activeElement?.tagName,
+      pauseBtn,
+      secondaryMenuController,
+      weatherPanel,
+      audioPanel,
+      conductorPanel,
+      locationBtn: document.getElementById('location-btn'),
+      mixBtn,
+      toggleWeatherPanel,
+      toggleAudioPanel,
+      toggleConductorPanel,
+      canvas,
+    });
   });
 
   // Create visualizer

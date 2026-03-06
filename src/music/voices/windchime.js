@@ -120,8 +120,9 @@ export function createWindChimeVoice() {
   }
 
   /**
-   * Trigger a single chime strike — FM tone + noise transient.
+   * Trigger a single chime strike — FM tone only.
    * Harmonicity is jittered ±0.15 so each strike has unique partial structure.
+   * The clapper transient is fired separately (once per cluster, not per note).
    */
   function triggerChime(noteName, time) {
     const voice = acquireVoice();
@@ -135,9 +136,6 @@ export function createWindChimeVoice() {
 
     voice.synth.triggerAttackRelease(noteName, decay + 0.3, time);
     voice.releaseAt = time + decay + 0.3;
-
-    // Clapper impact
-    strikeNoise.triggerAttackRelease('32n', time);
   }
 
   /**
@@ -171,16 +169,20 @@ export function createWindChimeVoice() {
    * 2–3 rapid strikes when wind is strong (simulates clapper swinging
    * through multiple tubes).
    *
-   * @param {number} [fromTime] - Transport time to chain from. Omit for the
-   *   initial call (uses relative `+offset`); subsequent calls pass the
-   *   callback's `time` arg to avoid Tone.js scheduling-inside-callback drift.
+   * @param {number} [fromTransportSeconds] - Transport timeline seconds to
+   *   chain from. Omit for the initial call (uses relative `+offset`).
    */
-  function scheduleNext(fromTime) {
+  function scheduleNext(fromTransportSeconds) {
     if (!isActive || currentNotes.length === 0) return;
+    const transport = Tone.getTransport();
     const interval = getInterval();
-    const when = fromTime != null ? fromTime + interval : `+${interval}`;
-    scheduledId = Tone.getTransport().scheduleOnce((time) => {
+    const when = fromTransportSeconds != null ? fromTransportSeconds + interval : `+${interval}`;
+    scheduledId = transport.scheduleOnce((time) => {
       if (!isActive) return;
+
+      // Clapper impact — one transient per event (in a cluster the clapper
+      // strikes once, then tubes ring each other).
+      strikeNoise.triggerAttackRelease('32n', time);
 
       // Cluster probability scales with wind: 0% at calm → 60% at 40+ km/h
       const clusterChance = Math.min(0.6, currentWindSpeed * 0.015);
@@ -198,7 +200,9 @@ export function createWindChimeVoice() {
         }
       }
 
-      scheduleNext(time);
+      // Schedule against transport timeline seconds, not AudioContext callback
+      // time, so pause/resume keeps recursive scheduling stable.
+      scheduleNext(transport.seconds);
     }, when);
   }
 
