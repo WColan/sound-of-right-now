@@ -235,6 +235,19 @@ export function createMovementConductor() {
   let onPhaseChangeFn = null;
   let lastPhaseName = null;
 
+  function getLiveElapsedValues() {
+    let liveElapsed = elapsed;
+    let liveTotalElapsed = totalElapsed;
+
+    if (!paused && lastTickTime != null) {
+      const deltaSec = Math.max(0, (performance.now() - lastTickTime) / 1000);
+      liveElapsed += deltaSec;
+      liveTotalElapsed += deltaSec;
+    }
+
+    return { liveElapsed, liveTotalElapsed };
+  }
+
   /**
    * Pick the duration for a movement in seconds.
    */
@@ -407,21 +420,22 @@ export function createMovementConductor() {
      * Get the current phase metadata for UI display.
      */
     getCurrentPhase() {
+      const { liveElapsed, liveTotalElapsed } = getLiveElapsedValues();
       if (!personality) {
         return {
           name: 'inactive', progress: 0, movementNumber: 0,
-          personality: '', elapsed: 0, remaining: 0, listeningSeconds: totalElapsed,
+          personality: '', elapsed: 0, remaining: 0, listeningSeconds: liveTotalElapsed,
         };
       }
-      const progress = duration > 0 ? Math.min(elapsed / duration, 1) : 0;
+      const progress = duration > 0 ? Math.min(liveElapsed / duration, 1) : 0;
       return {
         name: getPhaseAtProgress(progress),
         progress,
         movementNumber,
         personality: personalityName,
-        elapsed,
-        remaining: Math.max(0, duration - elapsed),
-        listeningSeconds: totalElapsed,
+        elapsed: liveElapsed,
+        remaining: Math.max(0, duration - liveElapsed),
+        listeningSeconds: liveTotalElapsed,
       };
     },
 

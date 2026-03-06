@@ -867,6 +867,7 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     conductorNext,
     conductorMenuBtn,
     movementConductor,
+    getTempoBpm: () => interpolator?.currentParams?.bpm ?? null,
     conductorEnabled: CONDUCTOR_ENABLED,
   });
   toggleWeatherPanel = panelControls.toggleWeatherPanel;

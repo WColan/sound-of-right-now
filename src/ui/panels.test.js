@@ -195,8 +195,7 @@ describe('setupInfoPanels', () => {
     expect(dom.conductorStatus.textContent).toBe('mvt. 3 | listening for 1h31m');
     expect(dom.conductorCurrent.textContent).toBe('stillness');
     expect(dom.conductorCurrent.style.left).toBe('94.00%');
-    expect(dom.conductorNext.textContent).toBe('next movement');
-    expect(dom.conductorNext.style.left).toBe('96.00%');
+    expect(dom.conductorNext.textContent).toBe('');
     expect(dom.conductorPlayhead.style.left).toBe('95.00%');
     expect(dom.personalityButtons[3].classList.contains('active')).toBe(true);
   });

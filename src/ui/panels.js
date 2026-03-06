@@ -11,6 +11,7 @@ const PHASE_RANGES = {
   descent: { start: 0.72, end: 0.88 },
   stillness: { start: 0.88, end: 1.0 },
 };
+const CONDUCTOR_UI_REFRESH_MS = 16;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
@@ -101,10 +102,12 @@ export function setupInfoPanels({
   conductorNext,
   conductorMenuBtn,
   movementConductor,
+  getTempoBpm,
   conductorEnabled = false,
 }) {
   const listeners = [];
   let conductorRefreshInterval = null;
+  let lastPhaseName = null;
   const personalityButtons = Array.from(document.querySelectorAll('.personality-btn'));
   const timelineState = conductorEnabled
     ? buildConductorTimeline(conductorTimeline, conductorPlayhead)
@@ -121,7 +124,16 @@ export function setupInfoPanels({
     conductorRefreshInterval = setInterval(() => {
       if (movementConductor?.isPaused) return;
       updateConductorUI();
-    }, 30000);
+    }, CONDUCTOR_UI_REFRESH_MS);
+  }
+
+  function getLabelSlideDurationMs() {
+    if (typeof getTempoBpm !== 'function') return 1200;
+    const bpm = Number(getTempoBpm());
+    if (!Number.isFinite(bpm) || bpm <= 0) return 1200;
+    const clampedBpm = Math.max(45, Math.min(120, bpm));
+    const beatMs = 60000 / clampedBpm;
+    return Math.max(900, Math.min(1800, beatMs * 2));
   }
 
   function addListener(node, event, handler) {
@@ -176,6 +188,18 @@ export function setupInfoPanels({
       personality: '',
     };
 
+    if (phase.name !== lastPhaseName) {
+      const durationMs = `${getLabelSlideDurationMs().toFixed(0)}ms`;
+      if (conductorPanel?.style) {
+        if (typeof conductorPanel.style.setProperty === 'function') {
+          conductorPanel.style.setProperty('--conductor-label-slide-ms', durationMs);
+        } else {
+          conductorPanel.style['--conductor-label-slide-ms'] = durationMs;
+        }
+      }
+      lastPhaseName = phase.name;
+    }
+
     if (conductorStatus) {
       conductorStatus.textContent = phase.name !== 'inactive'
         ? `mvt. ${phase.movementNumber} | listening for ${formatListeningDuration(phase.listeningSeconds)}`
@@ -210,8 +234,10 @@ export function setupInfoPanels({
         setLabelPosition(conductorNext, getPhaseCenterPercent('breathing'));
       } else {
         const nextPhaseName = getNextPhaseName(phase.name);
-        conductorNext.textContent = nextPhaseName ?? 'next movement';
-        setLabelPosition(conductorNext, nextPhaseName ? getPhaseCenterPercent(nextPhaseName) : 100);
+        conductorNext.textContent = nextPhaseName ?? '';
+        if (nextPhaseName) {
+          setLabelPosition(conductorNext, getPhaseCenterPercent(nextPhaseName));
+        }
       }
     }
 

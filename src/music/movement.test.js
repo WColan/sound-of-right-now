@@ -507,6 +507,33 @@ describe('createMovementConductor', () => {
       expect(phase.elapsed).toBeGreaterThanOrEqual(0);
       expect(phase.remaining).toBeGreaterThan(0);
     });
+
+    it('advances phase progress smoothly between ticks while running', () => {
+      performance.now.mockReturnValue(0);
+      conductor.resume();
+      conductor.tick();
+
+      performance.now.mockReturnValue(5000);
+      const phase = conductor.getCurrentPhase();
+      expect(phase.elapsed).toBeCloseTo(5, 1);
+      expect(phase.listeningSeconds).toBeCloseTo(5, 1);
+      expect(phase.progress).toBeGreaterThan(0);
+    });
+
+    it('does not advance phase progress while paused', () => {
+      performance.now.mockReturnValue(0);
+      conductor.resume();
+      conductor.tick();
+
+      performance.now.mockReturnValue(5000);
+      conductor.tick();
+      conductor.pause();
+
+      performance.now.mockReturnValue(25000);
+      const phase = conductor.getCurrentPhase();
+      expect(phase.elapsed).toBeCloseTo(5, 1);
+      expect(phase.listeningSeconds).toBeCloseTo(5, 1);
+    });
   });
 
   describe('movement duration', () => {

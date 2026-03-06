@@ -580,6 +580,7 @@ canvas#visualizer {
 
 /* Conductor panel */
 .conductor-panel {
+  --conductor-label-slide-ms: 1200ms;
   position: fixed;
   bottom: 5rem;
   right: 2rem;
@@ -658,7 +659,8 @@ canvas#visualizer {
   background: rgba(150, 185, 255, 0.95);
   box-shadow: 0 0 8px rgba(120, 160, 255, 0.45);
   transform: translateX(-1px);
-  transition: left 0.25s ease;
+  will-change: left;
+  transition: left 0.06s linear;
 }
 
 .conductor-label {
@@ -670,7 +672,7 @@ canvas#visualizer {
   min-height: 1.1em;
   white-space: nowrap;
   pointer-events: none;
-  transition: left 0.25s ease;
+  transition: left var(--conductor-label-slide-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .conductor-label-current {
