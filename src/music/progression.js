@@ -525,6 +525,26 @@ export function createProgressionPlayer(callbacks) {
       return { index: chordIndex, total: currentProgression.chords.length };
     },
 
+    get nextChord() {
+      if (!currentProgression) return null;
+      const nextIndex = chordIndex + 1;
+      if (nextIndex >= currentProgression.chords.length) {
+        const upcoming = nextProgression ?? currentProgression;
+        return upcoming?.chords[0] ?? null;
+      }
+      return currentProgression.chords[nextIndex];
+    },
+
+    get currentIntervalSeconds() {
+      if (!currentProgression) return null;
+      const chord = currentProgression.chords[chordIndex];
+      const base = currentProgression.harmonicRhythm;
+      const effective = chord?.isSecondaryDominant
+        ? base.replace(/(\d+)m/, (_, n) => `${Math.max(1, Math.round(parseInt(n) / 2))}m`)
+        : base;
+      return Tone.getTransport().toSeconds(effective);
+    },
+
     /**
      * Restart the chord loop after a pause. Resumes from the current position
      * in the current progression. Called by engine.resume().

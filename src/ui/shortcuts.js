@@ -9,11 +9,13 @@ export function handleMainKeydown(event, {
   weatherPanel,
   audioPanel,
   conductorPanel,
+  guitarPanel,
   locationBtn,
   mixBtn,
   toggleWeatherPanel,
   toggleAudioPanel,
   toggleConductorPanel,
+  toggleGuitarPanel,
   canvas,
 }) {
   if (!isEngineReady) return;
@@ -28,6 +30,9 @@ export function handleMainKeydown(event, {
       secondaryMenuController?.close?.();
       weatherPanel?.classList.add('hidden');
       audioPanel?.classList.add('hidden');
+      if (guitarPanel && !guitarPanel.classList.contains('hidden') && toggleGuitarPanel) {
+        toggleGuitarPanel();
+      }
       if (conductorPanel && !conductorPanel.classList.contains('hidden') && toggleConductorPanel) {
         toggleConductorPanel();
       } else {
@@ -58,6 +63,10 @@ export function handleMainKeydown(event, {
     case 'f':
     case 'F':
       canvas?.requestFullscreen?.();
+      break;
+    case 'g':
+    case 'G':
+      toggleGuitarPanel?.();
       break;
     default:
       break;

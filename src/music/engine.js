@@ -437,7 +437,7 @@ export function createSoundEngine() {
         `♫ Chord ${index + 1}/${total}: degree ${chord.degree} (${chord.quality}) — ${chord.notes.join(', ')}`
       );
 
-      // Notify external listener (visualizer)
+      // Notify external listener (visualizer + guitar panel)
       if (externalChordChangeCallback) {
         externalChordChangeCallback({
           rootName: chord.chordRootName,
@@ -446,6 +446,12 @@ export function createSoundEngine() {
           index,
           total,
           allQualities: currentProgression ? currentProgression.chords.map(c => c.quality) : [],
+          // Extended data for guitar practice panel
+          notes: chord.notes,
+          scaleTones: chord.scaleTones,
+          chordTones: chord.chordTones,
+          isSecondaryDominant: chord.isSecondaryDominant ?? false,
+          nextChord: progressionPlayer.nextChord,
         });
       }
     },

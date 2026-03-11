@@ -140,6 +140,8 @@ Keyboard shortcuts:
 - `M`: toggle mix panel
 - `W`: toggle weather panel
 - `A`: toggle audio mappings panel
+- `C`: toggle conductor panel
+- `G`: toggle guitar practice panel
 - `Escape`: close menus and panels
 - `F`: request fullscreen
 
@@ -203,6 +205,7 @@ src/
     display.js
     controls.js
     visualizer.js
+    guitar.js
   styles/
     main.css
 ```

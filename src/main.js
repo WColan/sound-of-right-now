@@ -18,6 +18,7 @@ import { createVisualizer } from './ui/visualizer.js';
 import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { handleMainKeydown } from './ui/shortcuts.js';
+import { setupGuitarPanel, toggleGuitarPanel as toggleGuitarPanelFn, onGuitarChordChange, stopCountdown } from './ui/guitar.js';
 import { setupPullToRefresh } from './ui/pull-to-refresh.js';
 import { classifyBiome } from './weather/biome.js';
 import {
@@ -467,9 +468,16 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
   // source of the glitching heard after changing location more than once.
   if (engine) {
     engine.dispose();
+    stopCountdown();
     engine = createSoundEngine();
     engine.start({ bpm: 72 });
-    engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+    engine.onChordChange((chordInfo) => {
+      visualizer.onChordChange(chordInfo);
+      onGuitarChordChange({
+        ...chordInfo,
+        intervalSeconds: engine.progressionPlayer.currentIntervalSeconds,
+      });
+    });
     // First load: start silent and swell up; location changes: cut in immediately
     engine.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
     if (fadeIn) engine.setUserGainScale(userVolumeScale, 3);
@@ -919,6 +927,10 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     });
   }
 
+  // Guitar practice panel (hidden — G key only)
+  const guitarPanelEl = document.getElementById('guitar-panel');
+  if (guitarPanelEl) setupGuitarPanel(guitarPanelEl);
+
   // ── Keyboard shortcuts ──
   document.addEventListener('keydown', (e) => {
     handleMainKeydown(e, {
@@ -929,11 +941,13 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
       weatherPanel,
       audioPanel,
       conductorPanel,
+      guitarPanel: guitarPanelEl,
       locationBtn: document.getElementById('location-btn'),
       mixBtn,
       toggleWeatherPanel,
       toggleAudioPanel,
       toggleConductorPanel,
+      toggleGuitarPanel: () => toggleGuitarPanelFn(),
       canvas,
     });
   });
@@ -942,8 +956,14 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   visualizer = createVisualizer(canvas, engine.analyser, engine.waveformAnalyser);
   visualizer.start();
 
-  // Wire chord changes from engine → visualizer
-  engine.onChordChange((chordInfo) => visualizer.onChordChange(chordInfo));
+  // Wire chord changes from engine → visualizer + guitar panel
+  engine.onChordChange((chordInfo) => {
+    visualizer.onChordChange(chordInfo);
+    onGuitarChordChange({
+      ...chordInfo,
+      intervalSeconds: engine.progressionPlayer.currentIntervalSeconds,
+    });
+  });
 
   // Wire lightning flashes from visualizer → engine (thunder transient)
   visualizer.onLightning(() => engine.triggerThunder());
