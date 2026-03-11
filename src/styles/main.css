@@ -18,7 +18,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   overflow: hidden;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
 }
 
 canvas#visualizer {
@@ -766,6 +766,55 @@ canvas#visualizer {
   color: var(--text-dim);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
+}
+
+/* ── Pull-to-refresh indicator ── */
+.ptr-indicator {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(0px);
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.ptr-indicator.active {
+  transition: none; /* immediate tracking while pulling */
+}
+
+.ptr-indicator svg {
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 0 6px rgba(120, 160, 255, 0));
+  transition: filter 0.3s ease;
+}
+
+.ptr-indicator.ready svg {
+  filter: drop-shadow(0 0 8px rgba(120, 160, 255, 0.5));
+}
+
+.ptr-arc {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 0s; /* instant tracking */
+}
+
+.ptr-indicator.ready .ptr-arc {
+  stroke: rgba(150, 185, 255, 0.95);
+}
+
+.ptr-indicator.reloading svg {
+  animation: ptr-spin 0.6s ease-in-out;
+}
+
+.ptr-indicator.reloading .ptr-arc {
+  stroke: rgba(150, 185, 255, 0.95);
+}
+
+@keyframes ptr-spin {
+  0%   { transform: rotate(-90deg) scale(1); }
+  50%  { transform: rotate(270deg) scale(1.15); }
+  100% { transform: rotate(630deg) scale(0.7); opacity: 0; }
 }
 
 /* ── Mobile layout ── */
