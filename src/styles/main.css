@@ -1099,12 +1099,6 @@ canvas#visualizer {
   line-height: 1;
 }
 
-.guitar-next-chord {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.42);
-  letter-spacing: 0.06em;
-}
-
 .guitar-close {
   position: absolute;
   top: 0.45rem;

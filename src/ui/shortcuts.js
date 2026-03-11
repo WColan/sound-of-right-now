@@ -30,7 +30,9 @@ export function handleMainKeydown(event, {
       secondaryMenuController?.close?.();
       weatherPanel?.classList.add('hidden');
       audioPanel?.classList.add('hidden');
-      guitarPanel?.classList.add('hidden');
+      if (guitarPanel && !guitarPanel.classList.contains('hidden') && toggleGuitarPanel) {
+        toggleGuitarPanel();
+      }
       if (conductorPanel && !conductorPanel.classList.contains('hidden') && toggleConductorPanel) {
         toggleConductorPanel();
       } else {

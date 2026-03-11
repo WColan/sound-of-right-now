@@ -18,7 +18,7 @@ import { createVisualizer } from './ui/visualizer.js';
 import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { handleMainKeydown } from './ui/shortcuts.js';
-import { setupGuitarPanel, toggleGuitarPanel as toggleGuitarPanelFn, onGuitarChordChange } from './ui/guitar.js';
+import { setupGuitarPanel, toggleGuitarPanel as toggleGuitarPanelFn, onGuitarChordChange, stopCountdown } from './ui/guitar.js';
 import { setupPullToRefresh } from './ui/pull-to-refresh.js';
 import { classifyBiome } from './weather/biome.js';
 import {
@@ -468,6 +468,7 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
   // source of the glitching heard after changing location more than once.
   if (engine) {
     engine.dispose();
+    stopCountdown();
     engine = createSoundEngine();
     engine.start({ bpm: 72 });
     engine.onChordChange((chordInfo) => {

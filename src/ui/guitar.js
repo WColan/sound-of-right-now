@@ -19,7 +19,7 @@ const QUALITY_LABELS = { maj7: 'maj7', min7: 'm7', dom7: '7', min7b5: 'm7♭5' }
 
 function formatChordName(rootName, quality) {
   const label = QUALITY_LABELS[quality] ?? quality;
-  // For 'm7' and 'm7♭5' the root and label run together; for 'maj7' and '7' add space
+  // 'm7' and 'm7♭5' run together (Cm7, Cm7♭5); '7' also runs (G7); only 'maj7' takes a space (G maj7)
   return (label.startsWith('m') || label === '7') ? `${rootName}${label}` : `${rootName} ${label}`;
 }
 
@@ -131,7 +131,7 @@ function renderChordBox(rootName, quality) {
   // Determine display window
   const activeFrets = frets.filter(f => f > 0);
   const minFret = activeFrets.length ? Math.min(...activeFrets) : 1;
-  const baseFret = minFret > 5 ? minFret : 1;
+  const baseFret = minFret >= 5 ? minFret : 1;
 
   // Fret position label (shown when chord is up the neck)
   if (baseFret > 1) {
@@ -395,7 +395,7 @@ function tickCd() {
   cdRaf = requestAnimationFrame(tickCd);
 }
 
-function stopCountdown() {
+export function stopCountdown() {
   if (cdRaf) { cancelAnimationFrame(cdRaf); cdRaf = null; }
 }
 
