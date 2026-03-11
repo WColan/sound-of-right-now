@@ -128,6 +128,32 @@
     <div id="city-results" class="city-results"></div>
   </div>
 
+  <!-- Guitar practice panel — G key only, not in menu -->
+  <div id="guitar-panel" class="guitar-panel hidden">
+    <div class="guitar-countdown-track"><div class="guitar-countdown-bar"></div></div>
+    <div class="guitar-header">
+      <span class="guitar-chord-name">—</span>
+      <button class="guitar-close" aria-label="Close guitar panel">×</button>
+    </div>
+    <div class="guitar-tabs">
+      <button class="guitar-tab active" data-tab="chord">chord</button>
+      <button class="guitar-tab" data-tab="scale">scale</button>
+    </div>
+    <div class="guitar-content">
+      <div class="guitar-chord-boxes">
+        <div class="guitar-chord-slot guitar-chord-slot-current">
+          <div class="guitar-chord-slot-label">now</div>
+          <div class="guitar-chord-box"></div>
+        </div>
+        <div class="guitar-chord-slot guitar-chord-slot-next">
+          <div class="guitar-chord-slot-label">next →</div>
+          <div class="guitar-next-chord-box"></div>
+        </div>
+      </div>
+      <div class="guitar-scale-neck hidden"></div>
+    </div>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
