@@ -18,6 +18,7 @@ import { createVisualizer } from './ui/visualizer.js';
 import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { handleMainKeydown } from './ui/shortcuts.js';
+import { setupPullToRefresh } from './ui/pull-to-refresh.js';
 import { classifyBiome } from './weather/biome.js';
 import {
   createMovementConductor,
@@ -36,6 +37,9 @@ console.info(`[SONAR] v${VERSION}`);
 // Stamp version into the landing overlay badge
 const overlayVersion = document.getElementById('overlay-version');
 if (overlayVersion) overlayVersion.textContent = `v${VERSION}`;
+
+// Pull-to-refresh for mobile PWA (no browser chrome → no way to reload otherwise)
+setupPullToRefresh();
 
 let engine = null;
 let interpolator = null;

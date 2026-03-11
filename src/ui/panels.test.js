@@ -114,10 +114,12 @@ describe('setupInfoPanels', () => {
 
     controls.toggleConductorPanel();
     expect(dom.conductorPanel.classList.contains('hidden')).toBe(false);
+    expect(document.body.classList.contains('conductor-open')).toBe(true);
 
     controls.toggleWeatherPanel();
     expect(dom.weatherPanel.classList.contains('hidden')).toBe(false);
     expect(dom.conductorPanel.classList.contains('hidden')).toBe(true);
+    expect(document.body.classList.contains('conductor-open')).toBe(false);
 
     controls.toggleAudioPanel();
     expect(dom.audioPanel.classList.contains('hidden')).toBe(false);
