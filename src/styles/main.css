@@ -771,7 +771,7 @@ canvas#visualizer {
 /* ── Pull-to-refresh indicator ── */
 .ptr-indicator {
   position: fixed;
-  top: 0;
+  top: env(safe-area-inset-top, 0px);
   left: 50%;
   transform: translateX(-50%) translateY(0px);
   z-index: 200;

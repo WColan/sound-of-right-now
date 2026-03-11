@@ -11,6 +11,7 @@
 const THRESHOLD = 100;       // px of pull distance required to trigger reload
 const MAX_PULL   = 140;      // px beyond which we clamp
 const INDICATOR_Y_MAX = 64;  // how far the indicator travels down from the top
+const DEAD_ZONE  = 10;       // px of movement before indicator appears (avoids false triggers on taps)
 
 /**
  * Initialise pull-to-refresh on the document.
@@ -34,14 +35,12 @@ export function setupPullToRefresh() {
   let startY = 0;
   let pulling = false;
   let triggered = false;
+  let lastProgress = 0;
 
   function shouldIgnore(e) {
     const t = e.target;
     // Ignore pulls that start on interactive elements or scrollable containers
-    if (t.closest('input, textarea, select, .volume-slider, .city-results, .info-panel')) {
-      return true;
-    }
-    return false;
+    return !!t.closest('input, textarea, select, .volume-slider, .city-results, .info-panel');
   }
 
   function onTouchStart(e) {
@@ -51,6 +50,7 @@ export function setupPullToRefresh() {
     startY = e.touches[0].clientY;
     pulling = true;
     triggered = false;
+    lastProgress = 0;
   }
 
   function onTouchMove(e) {
@@ -59,8 +59,8 @@ export function setupPullToRefresh() {
     const currentY = e.touches[0].clientY;
     const delta = currentY - startY;
 
-    // Only care about downward pulls
-    if (delta <= 0) {
+    // Only care about downward pulls past the dead zone
+    if (delta <= DEAD_ZONE) {
       hide();
       return;
     }
@@ -68,10 +68,12 @@ export function setupPullToRefresh() {
     // Prevent the browser's own overscroll behaviour
     e.preventDefault();
 
-    const clamped = Math.min(delta, MAX_PULL);
+    const effective = delta - DEAD_ZONE;
+    const clamped = Math.min(effective, MAX_PULL);
     const progress = Math.min(clamped / THRESHOLD, 1);
     const indicatorY = (clamped / MAX_PULL) * INDICATOR_Y_MAX;
 
+    lastProgress = progress;
     show(progress, indicatorY);
   }
 
@@ -79,14 +81,9 @@ export function setupPullToRefresh() {
     if (!pulling) return;
     pulling = false;
 
-    // Check if we reached the threshold
-    if (triggered) return; // already triggered
-    const indicatorY = parseFloat(indicator.style.transform?.match(/translateY\((.+?)px\)/)?.[1] || '0');
-    const progress = circle
-      ? 1 - parseFloat(circle.style.strokeDashoffset) / circumference
-      : 0;
+    if (triggered) return;
 
-    if (progress >= 1) {
+    if (lastProgress >= 1) {
       triggered = true;
       triggerReload();
     } else {
@@ -113,6 +110,7 @@ export function setupPullToRefresh() {
   }
 
   function hide() {
+    lastProgress = 0;
     indicator.classList.remove('active', 'ready');
     indicator.style.transform = 'translateX(-50%) translateY(0px)';
     indicator.style.opacity = '0';
@@ -134,12 +132,14 @@ export function setupPullToRefresh() {
   document.addEventListener('touchstart', onTouchStart, { passive: true });
   document.addEventListener('touchmove', onTouchMove, { passive: false });
   document.addEventListener('touchend', onTouchEnd, { passive: true });
+  document.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
   return {
     dispose() {
       document.removeEventListener('touchstart', onTouchStart);
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchEnd);
     },
   };
 }
