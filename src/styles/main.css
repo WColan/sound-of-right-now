@@ -471,7 +471,12 @@ canvas#visualizer {
   transform: translateX(-50%);
   z-index: 10;
   text-align: center;
-  transition: opacity 1s ease;
+  transition: opacity 1s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+
+.chord-display:hover {
+  filter: brightness(1.25);
 }
 
 .chord-display.hidden {

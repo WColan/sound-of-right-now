@@ -927,9 +927,16 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     });
   }
 
-  // Guitar practice panel (hidden — G key only)
+  // Guitar practice panel (hidden — G key or chord display click)
   const guitarPanelEl = document.getElementById('guitar-panel');
   if (guitarPanelEl) setupGuitarPanel(guitarPanelEl);
+
+  const chordDisplayEl = document.getElementById('chord-display');
+  if (chordDisplayEl) {
+    chordDisplayEl.addEventListener('click', () => {
+      if (engine) toggleGuitarPanelFn();
+    });
+  }
 
   // ── Keyboard shortcuts ──
   document.addEventListener('keydown', (e) => {
