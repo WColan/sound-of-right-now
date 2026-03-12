@@ -75,6 +75,64 @@ export function createTextureVoice() {
   let isRaining = false;
   let rainStopTimeout = null;
 
+  // PM2.5 grain layer — sparse high-frequency crackle for particulate haze
+  // (wildfire smoke, heavy smog). Distinct from rain: tighter bandpass (8 kHz),
+  // much shorter envelope (0.012s decay vs 0.05s), sparser trigger rate ('16n').
+  const grainGain = new Tone.Gain(0);
+  const grainNoise = new Tone.Noise({ type: 'white', volume: -24 });
+  const grainEnvelope = new Tone.AmplitudeEnvelope({
+    attack: 0.001,
+    decay: 0.012,
+    sustain: 0,
+    release: 0.01,
+  });
+  const grainFilter = new Tone.Filter({ frequency: 8000, type: 'bandpass', Q: 4 });
+
+  grainNoise.connect(grainEnvelope);
+  grainEnvelope.connect(grainFilter);
+  grainFilter.connect(grainGain);
+  grainGain.connect(filter);
+
+  let grainLoop = null;
+  let isGraining = false;
+  let grainStopTimeout = null;
+
+  function startGrain(intensity) {
+    if (grainStopTimeout) {
+      clearTimeout(grainStopTimeout);
+      grainStopTimeout = null;
+    }
+    if (!isGraining) {
+      isGraining = true;
+      grainNoise.start();
+    }
+    grainGain.gain.rampTo(intensity * 0.6, 8);
+
+    if (grainLoop) grainLoop.dispose();
+    grainLoop = new Tone.Loop((time) => {
+      if (Math.random() < intensity * 0.4) {
+        grainEnvelope.triggerAttackRelease(0.012, time);
+      }
+    }, '16n');
+    grainLoop.start(0);
+  }
+
+  function stopGrain() {
+    if (!isGraining) return;
+    isGraining = false;
+    grainGain.gain.rampTo(0, 8);
+    grainStopTimeout = setTimeout(() => {
+      grainStopTimeout = null;
+      if (isGraining) return;
+      grainNoise.stop();
+      if (grainLoop) {
+        grainLoop.stop();
+        grainLoop.dispose();
+        grainLoop = null;
+      }
+    }, 8500);
+  }
+
   function startRain(intensity = 0.5) {
     if (rainStopTimeout) {
       clearTimeout(rainStopTimeout);
@@ -142,6 +200,7 @@ export function createTextureVoice() {
     stop() {
       noise.stop();
       stopRain();
+      stopGrain();
     },
 
     setNoiseType(type) {
@@ -182,9 +241,19 @@ export function createTextureVoice() {
       }
     },
 
+    /** Set PM2.5 particulate grain intensity (0 = silent, 1 = full crackle). */
+    setGrainIntensity(intensity, rampTime = 8) {
+      if (intensity > 0) {
+        startGrain(intensity);
+      } else {
+        stopGrain();
+      }
+    },
+
     dispose() {
       this.stop();
       if (rainStopTimeout) clearTimeout(rainStopTimeout);
+      if (grainStopTimeout) clearTimeout(grainStopTimeout);
       noise.dispose();
       autoFilter.dispose();
       filter.dispose();
@@ -199,6 +268,11 @@ export function createTextureVoice() {
       rainMistGain.dispose();
       rainOutputGain.dispose();
       if (rainLoop) rainLoop.dispose();
+      grainNoise.dispose();
+      grainEnvelope.dispose();
+      grainFilter.dispose();
+      grainGain.dispose();
+      if (grainLoop) grainLoop.dispose();
     },
   };
 }

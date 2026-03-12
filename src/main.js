@@ -294,6 +294,7 @@ function onWeatherUpdate(weather) {
   const musicalParams = mapWeatherToMusic(weather, {
     tideLevel: currentTideData?.waterLevel ?? null,
     aqiLevel: currentAqiData?.aqi ?? null,
+    pm25: currentAqiData?.pm25 ?? null,
     latitude: currentLatitude ?? 40,
     pressureTrend,
     biome: currentBiome,

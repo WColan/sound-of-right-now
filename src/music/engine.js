@@ -710,6 +710,7 @@ export function createSoundEngine() {
       texture.noise.volume.value = textureVolume ?? -24;
       texture.filter.frequency.value = textureFilterCutoff ?? 2000;
       texture.setAutoFilter(textureAutoFilterRate ?? 0.08, textureAutoFilterDepth ?? 0.6);
+      texture.setGrainIntensity(params.pm25GrainIntensity ?? 0);
       texture.start();
 
       // Percussion
@@ -741,6 +742,7 @@ export function createSoundEngine() {
       windChime.output.volume.value = wcVol;
       windChimeWasActive = wcVol > -70;
       windChime.setActive(windChimeWasActive);
+      if (params.windChimeDecayMod != null) windChime.setDecayMod(params.windChimeDecayMod);
 
       // Choir — formant-filtered sustained chords
       choir.setVolume(params.choirVolume ?? -18, 0);
@@ -861,6 +863,16 @@ export function createSoundEngine() {
           windChime.output.volume.rampTo(value, duration);
           windChimeWasActive = value > -70;
           windChime.setActive(windChimeWasActive);
+          break;
+
+        // Wind chime decay multiplier — humidity-driven resonance length
+        case 'windChimeDecayMod':
+          windChime.setDecayMod(value);
+          break;
+
+        // PM2.5 particulate grain (texture voice)
+        case 'pm25GrainIntensity':
+          texture.setGrainIntensity(value, duration);
           break;
 
         // Stereo width (wind-driven — calm = intimate, gusty = wide)
