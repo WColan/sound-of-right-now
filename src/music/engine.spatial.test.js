@@ -243,6 +243,7 @@ vi.mock('./voices/texture.js', () => ({
   createTextureVoice() {
     return {
       output: makeOutput(),
+      rainOutput: makeOutput(),
       noise: { volume: { value: 0 } },
       filter: { frequency: { value: 0 } },
       setNoiseType() {},

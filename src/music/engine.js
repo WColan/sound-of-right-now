@@ -258,6 +258,8 @@ export function createSoundEngine() {
 
   texture.output.connect(texturePanner.node);
   texturePanner.node.connect(chorus);
+  // Rain drops bypass the texture lowpass filter to preserve their high-frequency character
+  texture.rainOutput.connect(chorus);
 
   drone.output.connect(dronePanner);
   dronePanner.connect(chorus);
