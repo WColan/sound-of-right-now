@@ -183,16 +183,19 @@ describe('mapWeatherToMusic — wind chime activation', () => {
     expect(result.windChimeVolume).toBeLessThan(0);
   });
 
-  it('volume is louder in dry air than humid air', () => {
-    const dry   = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 10 }));
-    const humid = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 90 }));
-    expect(dry.windChimeVolume).toBeGreaterThan(humid.windChimeVolume);
+  it('volume is louder at high wind speed than low wind speed', () => {
+    const light = mapWeatherToMusic(makeWeather({ windSpeed: 5,  humidity: 50 }));
+    const gusty = mapWeatherToMusic(makeWeather({ windSpeed: 40, humidity: 50 }));
+    expect(gusty.windChimeVolume).toBeGreaterThan(light.windChimeVolume);
   });
 
-  it('volume does not change with wind speed when active', () => {
-    const light = mapWeatherToMusic(makeWeather({ windSpeed: 5, humidity: 50 }));
-    const gusty = mapWeatherToMusic(makeWeather({ windSpeed: 40, humidity: 50 }));
-    expect(light.windChimeVolume).toBe(gusty.windChimeVolume);
+  it('humidity drives decay modifier, not volume', () => {
+    const dry   = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 10 }));
+    const humid = mapWeatherToMusic(makeWeather({ windSpeed: 15, humidity: 90 }));
+    // Volume should be equal (same wind speed)
+    expect(dry.windChimeVolume).toBe(humid.windChimeVolume);
+    // Humid air → longer decay (decayMod > 1); dry air → shorter (decayMod < 1)
+    expect(humid.windChimeDecayMod).toBeGreaterThan(dry.windChimeDecayMod);
   });
 });
 
