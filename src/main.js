@@ -294,6 +294,7 @@ function onWeatherUpdate(weather) {
   const musicalParams = mapWeatherToMusic(weather, {
     tideLevel: currentTideData?.waterLevel ?? null,
     aqiLevel: currentAqiData?.aqi ?? null,
+    pm25: currentAqiData?.pm25 ?? null,
     latitude: currentLatitude ?? 40,
     pressureTrend,
     biome: currentBiome,
@@ -829,24 +830,106 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     const velScale = p.globalVelocityScale ?? 1;
     const timeStr = velScale > 0.8 ? 'Daytime' : velScale > 0.5 ? 'Golden hour' : 'Night';
 
-    const lines = [
-      `<strong>${tempF}\u00B0F</strong> <span class="mapping-hint">\u2192</span> <strong>${p.rootNote} ${capitalizeFirst(p.scaleType)}</strong>`,
-      `<strong>${tempF}\u00B0F</strong> <span class="mapping-hint">\u2192</span> ${p.bpm} BPM`,
-      `<strong>${capitalizeFirst(p.weatherCategory)}</strong> <span class="mapping-hint">\u2192</span> ${capitalizeFirst(p.melodyMood)} mood`,
-      `<strong>Chord:</strong> ${chordStr}`,
-      '',
-      `<strong>${w.humidity}% humidity</strong> <span class="mapping-hint">\u2192</span> ${p.reverbDecay.toFixed(1)}s reverb, ${(p.reverbWet * 100).toFixed(0)}% wet`,
-      `<strong>${Math.round(w.pressure)} hPa</strong> <span class="mapping-hint">\u2192</span> bass cutoff ${p.bassCutoff.toFixed(0)} Hz`,
-      `<strong>${Math.round(w.windSpeed)} km/h wind</strong> <span class="mapping-hint">\u2192</span> ${(p.rhythmDensity * 100).toFixed(0)}% rhythm density`,
-      `<strong>${timeStr}</strong> <span class="mapping-hint">\u2192</span> ${(p.padBrightness * 100).toFixed(0)}% brightness`,
-      `<strong>${moonName}</strong> <span class="mapping-hint">\u2192</span> LFO ${p.lfoRate.toFixed(2)} Hz`,
-    ];
+    const arrow = '<span class="mapping-hint">\u2192</span>';
+    const sec = (s) => `<span class="mapping-hint">${s}</span>`;
 
-    if (w.uvIndex > 0) {
-      lines.push(`<strong>UV ${w.uvIndex.toFixed(0)}</strong> <span class="mapping-hint">\u2192</span> arp shimmer ${p.arpeggioFilterCutoff.toFixed(0)} Hz`);
+    const moonFullness = p._meta?.moonFullness ?? 0;
+    const filterWarmth = p._meta?.filterWarmth ?? 0;
+    const uvNorm = Math.min(1, Math.max(0, (w.uvIndex ?? 0) / 11));
+    const uvCents = Math.round(uvNorm * 15);
+    const cloudPct = Math.round(w.cloudCover ?? 0);
+    const melodyOrbit = (0.2 + 0.25 * moonFullness).toFixed(2);
+    const chimeActive = w.windSpeed > 3;
+    const chimeStr = chimeActive
+      ? `${p.windChimeVolume.toFixed(0)} dB \u00B7 decay \u00D7${(p.windChimeDecayMod ?? 1).toFixed(2)}`
+      : 'inactive (calm)';
+
+    const lines = [];
+
+    // ── Harmony ─────────────────────────────────────────────────────────────
+    lines.push(sec('\u2500\u2500 harmony \u2500\u2500'));
+    // Temperature → key/scale + BPM
+    lines.push(`<strong>${tempF}\u00B0F</strong> ${arrow} <strong>${p.rootNote} ${capitalizeFirst(p.scaleType)}</strong> \u00B7 ${p.bpm} BPM`);
+    // Weather category → mood, timbre, rhythm patterns, chord
+    lines.push(`<strong>${capitalizeFirst(p.weatherCategory)}</strong> ${arrow} ${capitalizeFirst(p.melodyMood)} mood \u00B7 ${p.timbreProfile ?? 'cool'} timbre`);
+    lines.push(`<strong>${capitalizeFirst(p.weatherCategory)}</strong> ${arrow} ${capitalizeFirst(p.arpeggioRhythmPattern ?? '')} arp \u00B7 ${capitalizeFirst(p.percussionPattern ?? '')} perc`);
+    lines.push(`<strong>Chord</strong> ${p.rootNote}: <strong>${chordStr}</strong>`);
+
+    lines.push('');
+
+    // ── Sky & Light ──────────────────────────────────────────────────────────
+    lines.push(sec('\u2500\u2500 sky & light \u2500\u2500'));
+    // Time of day → brightness chain
+    lines.push(`<strong>${timeStr}</strong> ${arrow} ${(p.padBrightness * 100).toFixed(0)}% brightness \u00B7 ${p.arpeggioFilterCutoff.toFixed(0)} Hz arp`);
+    // Cloud cover → brightness dimming (skip if negligible)
+    if (cloudPct > 5) {
+      lines.push(`<strong>${cloudPct}% cloud cover</strong> ${arrow} \u2212${Math.round(cloudPct * 0.25)}% brightness`);
+    }
+    // Golden hour warmth (only near sunrise/sunset)
+    if (filterWarmth > 0.05) {
+      lines.push(`<strong>Golden hour</strong> ${arrow} warm filter \u00B7 +${(filterWarmth * 0.3).toFixed(2)} chorus`);
+    }
+    // UV → pad shimmer
+    if (uvCents > 0) {
+      lines.push(`<strong>UV ${(w.uvIndex ?? 0).toFixed(0)}</strong> ${arrow} +${uvCents}\u00A2 pad shimmer`);
     }
 
-    return lines.filter(l => l !== undefined).join('<br>');
+    lines.push('');
+
+    // ── Space & Depth ────────────────────────────────────────────────────────
+    lines.push(sec('\u2500\u2500 space & depth \u2500\u2500'));
+    // Moon + humidity → chorus; moon → LFO
+    lines.push(`<strong>${moonName}</strong> + <strong>${w.humidity}%</strong> ${arrow} chorus ${(p.chorusDepth ?? 0).toFixed(2)} \u00B7 LFO ${p.lfoRate.toFixed(2)} Hz`);
+    // Moon → choir volume + melody spatial orbit
+    lines.push(`<strong>${moonName}</strong> ${arrow} choir ${(p.choirVolume ?? -18).toFixed(0)} dB \u00B7 melody orbit \u00B1${melodyOrbit}`);
+    // Humidity → reverb
+    lines.push(`<strong>${w.humidity}% humidity</strong> ${arrow} ${p.reverbDecay.toFixed(1)}s reverb \u00B7 ${(p.reverbWet * 100).toFixed(0)}% wet`);
+    // Pressure → bass, drone, sub-bass, delay
+    lines.push(`<strong>${Math.round(w.pressure)} hPa</strong> ${arrow} bass ${p.bassCutoff.toFixed(0)} Hz \u00B7 drone ${(p.droneCutoff ?? 200).toFixed(0)} Hz`);
+    lines.push(`<strong>${Math.round(w.pressure)} hPa</strong> ${arrow} sub \u00D7${(p.subBassGain ?? 0.3).toFixed(2)} \u00B7 delay ${(p.delayFeedback ?? 0.2).toFixed(2)}`);
+
+    // Season + biome as active modifiers
+    const seasonName = capitalizeFirst(p.seasonalPalette ?? '');
+    const biome = capitalizeFirst(p._meta?.biome ?? 'grassland');
+    lines.push(`${sec(seasonName)} \u00B7 ${sec(biome)} ${arrow} reverb, spread & brightness modifiers`);
+
+    lines.push('');
+
+    // ── Motion ───────────────────────────────────────────────────────────────
+    lines.push(sec('\u2500\u2500 motion \u2500\u2500'));
+    // Wind direction → arpeggio pattern + pan
+    if (w.windSpeed > 3) {
+      lines.push(`<strong>${Math.round(w.windDirection ?? 0)}\u00B0 direction</strong> ${arrow} ${capitalizeFirst(p.arpeggioPattern ?? '')} arp pattern`);
+    }
+    // Wind speed → rhythm, stereo width
+    lines.push(`<strong>${Math.round(w.windSpeed)} km/h wind</strong> ${arrow} ${(p.rhythmDensity * 100).toFixed(0)}% rhythm \u00B7 \u00B1${(p.arpeggioWidth ?? 0.5).toFixed(2)} width`);
+    // Wind chime: volume (wind-driven) + decay (humidity-driven)
+    lines.push(`<strong>wind chime</strong> ${arrow} ${chimeStr}`);
+
+    // ── Air Quality ──────────────────────────────────────────────────────────
+    const aqi = currentAqiData;
+    const hasAqiHaze = aqi && aqi.aqi > 50;
+    const hasGrain = aqi && aqi.pm25 != null && (p.pm25GrainIntensity ?? 0) > 0;
+    if (hasAqiHaze || hasGrain) {
+      lines.push('');
+      lines.push(sec('\u2500\u2500 air quality \u2500\u2500'));
+      if (hasAqiHaze) {
+        lines.push(`<strong>AQI ${aqi.aqi}</strong> ${arrow} haze filter \u00B7 +reverb`);
+      }
+      if (hasGrain) {
+        lines.push(`<strong>PM2.5 ${aqi.pm25.toFixed(0)} \u03BCg/m\u00B3</strong> ${arrow} ${Math.round((p.pm25GrainIntensity ?? 0) * 100)}% grain crackle`);
+      }
+    }
+
+    // ── Tide ─────────────────────────────────────────────────────────────────
+    if (currentTideData?.waterLevel != null) {
+      const tideNorm = Math.min(1, Math.max(0, (currentTideData.waterLevel + 1) / 9));
+      lines.push('');
+      lines.push(sec('\u2500\u2500 tide \u2500\u2500'));
+      lines.push(`<strong>${currentTideData.waterLevel.toFixed(1)} ft</strong> ${arrow} bass +${(tideNorm * 4).toFixed(1)} dB`);
+    }
+
+    return lines.join('<br>');
   }
 
   let toggleWeatherPanel = null;

@@ -65,14 +65,18 @@ const RAMP_DURATIONS = {
   arpeggioWidth: 8,
   melodyWidth: 8,
 
-  // Wind chime volume (medium — wind changes gradually)
+  // Wind chime volume + decay (medium — wind/humidity changes gradually)
   windChimeVolume: 5,
+  windChimeDecayMod: 5,
 
   // Pressure (slow — affects harmonic rhythm)
   pressureNorm: 30,
 
   // Global volume (slow — day/night transitions)
   globalVelocityScale: 30,
+
+  // PM2.5 particulate grain (slow — air quality changes gradually)
+  pm25GrainIntensity: 10,
 };
 
 // These parameters snap discretely (not interpolated)

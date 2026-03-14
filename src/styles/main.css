@@ -734,6 +734,8 @@ canvas#visualizer {
   padding: 1.5rem 2rem;
   min-width: 260px;
   max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
   font-size: 0.78rem;
   line-height: 2;
   color: var(--text-secondary);

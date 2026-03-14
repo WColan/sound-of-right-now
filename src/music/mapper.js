@@ -14,6 +14,7 @@ import { CATEGORY_TO_MOOD } from './constants.js';
  * @param {object} [options]
  * @param {number} [options.tideLevel] - Water level in feet (null if inland)
  * @param {number} [options.aqiLevel] - US AQI value (null if unavailable)
+ * @param {number} [options.pm25] - PM2.5 concentration in μg/m³ (null if unavailable)
  * @param {number} [options.latitude] - For seasonal + hemisphere awareness
  * @param {number} [options.pressureTrend] - -1 (falling) to +1 (rising); 0 = stable
  * @returns {object} MusicalParams
@@ -74,10 +75,13 @@ export function mapWeatherToMusic(weather, options = {}) {
   const windNorm = clamp(weather.windSpeed / 50, 0, 1);
   const rhythmDensity = lerp(0.05, 0.6, windNorm);
   const arpeggioVolume = lerp(-26, -14, windNorm);
-  // Wind chime activates above 3 km/h (light breeze). Volume is driven by
-  // humidity (humid air dampens high-frequency metallic resonance), not wind
-  // speed — wind controls strike *frequency* via setWindSpeed() in the voice.
-  const windChimeVolume = weather.windSpeed > 3 ? lerp(-12, -16, humNorm) : -80;
+  // Wind chime activates above 3 km/h (light breeze). Volume is wind-driven —
+  // stronger wind = louder chimes. Humidity controls decay time (via
+  // windChimeDecayMod): dry air = shorter, crisper ring; humid air = longer,
+  // damped resonance. Wind controls strike *frequency* via setWindSpeed().
+  const windChimeVolume = weather.windSpeed > 3 ? lerp(-20, -10, windNorm) : -80;
+  // 0.75 = dry/crisp, 1.4 = humid/sustained
+  const windChimeDecayMod = lerp(0.75, 1.4, humNorm);
   // Windier conditions create faster, more dramatic atmospheric texture sweeps.
   // Calm (windNorm=0): 0.05 Hz slow drift, 0.3 depth (gentle)
   // Gusty (windNorm=1): 0.4 Hz fast churn, 0.9 depth (dramatic)
@@ -110,7 +114,10 @@ export function mapWeatherToMusic(weather, options = {}) {
   // Moon phase → modulation
   const lfoDepth = lerp(0.1, 0.9, moonFullness);
   const lfoRate = lerp(0.02, 0.12, moonFullness);
-  const chorusDepth = lerp(0.1, 0.7, moonFullness);
+  // Chorus depth: moon (60%) + humidity (40%).
+  // Full moon = lush shimmer; humid air = thick, blurred wash (chorus is a
+  // blurring effect, making humid/muggy the more direct physical analog).
+  const chorusDepth = lerp(0.1, 0.7, clamp(moonFullness * 0.6 + humNorm * 0.4, 0, 1));
 
   // Weather condition → sound palette
   // Pad spread is base from the palette, boosted by wind speed.
@@ -149,6 +156,14 @@ export function mapWeatherToMusic(weather, options = {}) {
     reverbDecay = Math.min(15, reverbDecay + aqiNorm * 3);
   }
 
+  // ── PM2.5 particulate grain intensity ──
+  // Fine particulate matter (smoke, smog, dust) has a distinct gritty quality
+  // separate from general AQI haze. No effect below 35 μg/m³ (US "moderate"
+  // threshold); full crackle at 150 μg/m³ (US "unhealthy").
+  const pm25GrainIntensity = options.pm25 != null
+    ? clamp((options.pm25 - 35) / 115, 0, 1)
+    : 0;
+
   // ── Seasonal instrument palette ──
   // Multiplicative modifiers on reverb + chorus; additive brightness floor.
   const sPal = SEASONAL_PALETTES[seasonName] || SEASONAL_PALETTES.summer;
@@ -165,9 +180,15 @@ export function mapWeatherToMusic(weather, options = {}) {
   masterFilterCutoff = clamp(masterFilterCutoff + bt.filterShift, 1000, 14000);
   padSpread = clamp(padSpread + bt.spreadMod, 8, 38);
 
-  // ── UV index shimmer ──
+  // ── UV index → heat shimmer (pad detune spread) ──
+  // UV is redundant with time-of-day + cloud cover for brightness, but maps
+  // naturally to heat shimmer: intense solar radiation creates pitch instability
+  // (visible haze has an auditory analog — a widened, shimmering detune).
+  // The arpeggio filter instead tracks overall scene brightness so it dims
+  // at night and stays coherent with the master filter.
   const uvNorm = clamp((weather.uvIndex ?? 0) / 11, 0, 1);
-  const arpeggioFilterCutoff = lerp(2000, 8000, uvNorm);
+  padSpread = clamp(padSpread + uvNorm * 15, 8, 45); // up to +15 cents of heat shimmer
+  const arpeggioFilterCutoff = lerp(2000, 6000, timeOfDay.brightness);
 
   // ── Dynamic velocity (time-of-day volume) ──
   const velocityBase = lerp(0.4, 1.0, timeOfDay.brightness);
@@ -313,6 +334,9 @@ export function mapWeatherToMusic(weather, options = {}) {
     melodyWidth,
     // Wind chime
     windChimeVolume,
+    windChimeDecayMod,
+    // PM2.5 particulate grain texture
+    pm25GrainIntensity,
     timbreProfile,
     seasonalPalette: seasonName,
     // Progression-driving params
@@ -350,7 +374,9 @@ function mapTemperature(tempC) {
   else if (tempC < 30) modeIndex = 4;   // ionian
   else modeIndex = 5;                    // lydian
 
-  const rootIndex = Math.abs(Math.floor(tempC / 3)) % ROOT_NOTES.length;
+  // Step size ÷10 (was ÷3): root changes every 10 °C rather than every 3 °C,
+  // reducing arbitrary key modulations from small temperature fluctuations.
+  const rootIndex = Math.abs(Math.floor(tempC / 10)) % ROOT_NOTES.length;
 
   return {
     rootNote: ROOT_NOTES[rootIndex],

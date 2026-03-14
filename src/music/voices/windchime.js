@@ -74,6 +74,7 @@ export function createWindChimeVoice() {
   let currentChordNotes = [];
   let currentWindSpeed = 0;
   let isActive = false;
+  let decayMultiplier = 1.0;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export function createWindChimeVoice() {
   function getDecayForNote(noteName) {
     const midi = Tone.Frequency(noteName).toMidi();
     const t = Math.min(1, Math.max(0, (midi - 84) / 24));
-    return 1.4 - t * 1.1;
+    return (1.4 - t * 1.1) * decayMultiplier;
   }
 
   /**
@@ -220,6 +221,11 @@ export function createWindChimeVoice() {
 
     setWindSpeed(kmh) {
       currentWindSpeed = kmh;
+    },
+
+    /** Scale chime decay times. 1.0 = nominal; <1 = drier/crisper; >1 = longer ring. */
+    setDecayMod(mod) {
+      decayMultiplier = mod;
     },
 
     setActive(active) {

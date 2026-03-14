@@ -251,6 +251,7 @@ vi.mock('./voices/texture.js', () => ({
       setFilterCutoff() {},
       setVolume() {},
       setRain() {},
+      setGrainIntensity() {},
       start() {},
       stop() {},
       dispose() {},
