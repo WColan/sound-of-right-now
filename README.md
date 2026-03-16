@@ -141,7 +141,7 @@ Keyboard shortcuts:
 - `W`: toggle weather panel
 - `A`: toggle audio mappings panel
 - `C`: toggle conductor panel
-- `G`: toggle guitar practice panel
+- `G`: toggle guitar practice panel (vertical fretboard — chord voicing or full scale view; next chord shown in header)
 - `Escape`: close menus and panels
 - `F`: request fullscreen
 
