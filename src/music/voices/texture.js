@@ -34,15 +34,15 @@ export function createTextureVoice() {
   // Each band has its own panner so drops appear at random stereo positions.
   // All bands feed into rainOutputGain, which is exposed as a separate output so
   // engine.js can connect it AFTER the texture lowpass (preserving high-frequency content).
-  const rainNoise = new Tone.Noise({ type: 'white', volume: -14 });
+  const rainNoise = new Tone.Noise({ type: 'white', volume: -17 });
 
   // Band definitions: [centerFreq, Q, baseDecay, volume]
   // Wider Q values (lower numbers) give each drop more body/character.
   // Boosted volumes ensure drops are audible against the texture noise layer.
   const RAIN_BANDS = [
-    { freq: 1200, q: 0.8, decay: 0.09, vol: -12 },  // heavy/plop — large drops
-    { freq: 3500, q: 1.2, decay: 0.05, vol: -14 },  // medium — typical drops
-    { freq: 8000, q: 1.8, decay: 0.03, vol: -16 },  // light/tick — fine spray
+    { freq: 1200, q: 0.8, decay: 0.09, vol: -15 },  // heavy/plop — large drops
+    { freq: 3500, q: 1.2, decay: 0.05, vol: -17 },  // medium — typical drops
+    { freq: 8000, q: 1.8, decay: 0.03, vol: -19 },  // light/tick — fine spray
   ];
 
   const rainBands = RAIN_BANDS.map(({ freq, q, decay, vol }) => {
@@ -86,8 +86,8 @@ export function createTextureVoice() {
       isRaining = true;
       rainNoise.start();
     }
-    rainOutputGain.gain.rampTo(intensity * 2.0, 2);
-    rainMistGain.gain.rampTo(intensity * 0.6, 2);
+    rainOutputGain.gain.rampTo(intensity * 1.3, 2);
+    rainMistGain.gain.rampTo(intensity * 0.45, 2);
 
     if (rainLoop) rainLoop.dispose();
     rainLoop = new Tone.Loop((time) => {
