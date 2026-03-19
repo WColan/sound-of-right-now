@@ -87,6 +87,7 @@ const DISCRETE_PARAMS = new Set([
   'noiseType',
   'padSpread',
   'timbreProfile',      // Oscillator type + envelope character — snaps at next note
+  'soundProfile',       // Instrument character preset — 15s timbre transition
   // Progression-driving discrete params
   'weatherCategory',
   'arpeggioRhythmPattern',

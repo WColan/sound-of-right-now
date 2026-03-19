@@ -226,6 +226,11 @@ export function createSoundEngine() {
   // fatsine pads have energy down to ~60 Hz; this creates headroom for the bass.
   const padHPF = new Tone.Filter({ frequency: 90, type: 'highpass', rolloff: -12 });
 
+  // ── Pad distortion — rock profile only ──
+  // Inactive by default (wet: 0). Engaged at wet: 0.7 for the rock sound profile,
+  // transforming the harmonic pad into distorted electric guitar power chords.
+  const padDistortion = new Tone.Distortion({ distortion: 0.7, wet: 0 });
+
   // ── Milky Way shimmer — Tremolo on pad ──
   // Inactive by default (wet: 0). Fades in on clear, dark, moonless nights.
   // Slow amplitude modulation (0.8–2 Hz) creates a breathing, ethereal quality
@@ -244,7 +249,8 @@ export function createSoundEngine() {
   // Connect voices -> spatial nodes -> wideners/chorus bus
   pad.output.connect(padHPF);
   tapMeter(pad.output, voiceMeters.pad);
-  padHPF.connect(padPanner.node);
+  padHPF.connect(padDistortion);
+  padDistortion.connect(padPanner.node);
   padPanner.node.connect(milkyWayTremolo);
   milkyWayTremolo.connect(chorus);
 
@@ -288,6 +294,7 @@ export function createSoundEngine() {
   let currentRoot = null;
   let currentMode = null;
   let currentWeatherCategory = 'clear';
+  let currentSoundProfile = 'ambient'; // 'ambient' | 'symphonic' | 'rock' | 'jazz'
   let currentPressureNorm = 0.5;
   let lastPadVoicing = null;
   let lastBassNote = null;         // Needed for resume() re-attack
@@ -478,6 +485,79 @@ export function createSoundEngine() {
     windChimePanner,
   ].every((node) => node.mode === 'hrtf') ? 'hrtf' : 'stereo-fallback';
 
+  // ── Profile-driven volume filter ──
+  // Prevents weather ramps from overriding profile mix decisions.
+  // Called in rampParam() before applying each parameter.
+  function profileVolumeOverride(key, value) {
+    if (currentSoundProfile === 'rock') {
+      if (key === 'choirVolume')     return Math.min(value, -40); // muted
+      if (key === 'windChimeVolume') return Math.min(value, -40); // muted
+      if (key === 'percussionVolume') return Math.max(value, -20); // heavy
+    }
+    if (currentSoundProfile === 'symphonic') {
+      if (key === 'choirVolume')     return Math.max(value, -20); // prominent choral
+      if (key === 'percussionVolume') return Math.min(value, -28); // light timpani
+    }
+    return value;
+  }
+
+  // ── Sound profile application ──
+  // Called when weather conditions change to a new profile category, or at startup.
+  // rampTime = 0 for instant (applyParams), 15 for smooth weather transitions.
+  function applySoundProfile(profileName, rampTime = 15) {
+    if (profileName === currentSoundProfile && rampTime > 0) return;
+    currentSoundProfile = profileName;
+    const t = Math.max(0, rampTime);
+
+    switch (profileName) {
+      case 'symphonic':
+        pad.setTimbreProfile('strings');          // fatsawtooth slow-bloom = strings
+        melody.setTimbreProfile('cool');           // triangle = flute / oboe
+        bass.setCharacter({ attack: 4, portamento: 2 }); // arco bow feel
+        choir.setVolume(-14, t);                  // prominent choral section
+        percussion.membrane.volume.rampTo(-28, t); // light timpani touch
+        percussion.metal.volume.rampTo(-32, t);
+        padDistortion.wet.rampTo(0, t);
+        reverb.wet.rampTo(Math.min(0.85, reverb.wet.value + 0.15), t);
+        console.log('🎻 Sound profile: symphonic');
+        break;
+
+      case 'rock':
+        pad.setTimbreProfile('guitar');            // fatsawtooth + distortion = power chords
+        melody.setTimbreProfile('stormy');         // sawtooth = lead guitar
+        bass.setCharacter({ attack: 0.05, portamento: 0.1 }); // punchy electric
+        choir.setVolume(-50, t);                  // no choir in a rock band
+        windChime.output.volume.rampTo(-50, t);   // no wind chimes either
+        percussion.membrane.volume.rampTo(-16, t); // heavy kick
+        percussion.metal.volume.rampTo(-20, t);    // heavy hi-hat/cymbal
+        padDistortion.wet.rampTo(0.7, t);          // distortion on!
+        reverb.wet.rampTo(Math.max(0.1, reverb.wet.value - 0.1), t);
+        console.log('🎸 Sound profile: rock');
+        break;
+
+      case 'jazz':
+        pad.setTimbreProfile('piano');             // triangle fast-decay = piano stabs
+        melody.setTimbreProfile('stormy');         // sawtooth = saxophone
+        bass.setCharacter({ attack: 0.04, portamento: 0.05 }); // plucky upright
+        choir.setVolume(-30, t);                  // quiet backing brass
+        percussion.membrane.volume.rampTo(-24, t); // brush kit feel
+        percussion.metal.volume.rampTo(-26, t);
+        padDistortion.wet.rampTo(0, t);
+        masterFilter.frequency.linearRampTo(5000, t); // warm, low-rolloff room
+        console.log('🎷 Sound profile: jazz');
+        break;
+
+      case 'ambient':
+      default:
+        // Ambient restores weather-driven timbres; timbre will be corrected on
+        // the next applyParams / scheduleDiscreteChange call for timbreProfile.
+        bass.setCharacter({ attack: 3, portamento: 2 }); // slow arco default
+        padDistortion.wet.rampTo(0, t);
+        console.log('🌤️ Sound profile: ambient');
+        break;
+    }
+  }
+
   return {
     // Expose for visualization
     analyser,
@@ -495,7 +575,19 @@ export function createSoundEngine() {
     voices: { pad, arpeggio, bass, texture, percussion, drone, melody, windChime, choir },
 
     // Expose effects for direct control
-    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain, percussionReverb, arpeggioWidener, melodyWidener, padHPF },
+    effects: { chorus, delay, reverb, masterFilter, masterVelocity, limiter, subGain, percussionReverb, arpeggioWidener, melodyWidener, padHPF, padDistortion },
+
+    /** Current sound profile name. */
+    get soundProfile() { return currentSoundProfile; },
+
+    /**
+     * Switch to a named sound profile, transitioning timbres and mix over rampTime seconds.
+     * @param {'ambient'|'symphonic'|'rock'|'jazz'} profileName
+     * @param {number} [rampTime=15] - Transition duration in seconds
+     */
+    setSoundProfile(profileName, rampTime = 15) {
+      applySoundProfile(profileName, rampTime);
+    },
 
     // Expose panners/spatial nodes for debugging.
     panners: {
@@ -776,6 +868,9 @@ export function createSoundEngine() {
 
       // BPM
       Tone.getTransport().bpm.value = bpm || 72;
+
+      // Apply sound profile last — overrides weather-driven mix for key voices
+      applySoundProfile(params.soundProfile ?? 'ambient', 0);
     },
 
     /**
@@ -785,6 +880,9 @@ export function createSoundEngine() {
      * @param {number} duration - Ramp time in seconds
      */
     rampParam(key, value, duration) {
+      // Profile filter: prevent weather ramps from overriding profile mix settings
+      value = profileVolumeOverride(key, value);
+
       switch (key) {
         // Volumes
         case 'padVolume': pad.setVolume(value, duration); break;
@@ -954,11 +1052,20 @@ export function createSoundEngine() {
           currentMelodyMood = value;
           break;
 
+        case 'soundProfile':
+          // Smooth 15s transition when weather drives a profile change
+          applySoundProfile(value, 15);
+          break;
+
         case 'timbreProfile':
-          pad.setTimbreProfile(value);
-          arpeggio.setTimbreProfile(value);
-          melody.setTimbreProfile(value);
-          choir.setTimbreProfile(value);
+          // Only apply weather-driven timbre when ambient — other profiles manage
+          // their own oscillator types via applySoundProfile().
+          if (currentSoundProfile === 'ambient') {
+            pad.setTimbreProfile(value);
+            arpeggio.setTimbreProfile(value);
+            melody.setTimbreProfile(value);
+            choir.setTimbreProfile(value);
+          }
           break;
 
         case 'seasonalPalette':

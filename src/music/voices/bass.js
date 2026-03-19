@@ -98,6 +98,19 @@ export function createBassVoice() {
       synth.setNote(note);
     },
 
+    /**
+     * Set the bass character for a sound profile.
+     * Changes envelope attack and portamento to shift between arco strings
+     * (slow bloom), electric bass (punchy instant), and upright pluck (mid).
+     * @param {{ attack?: number, portamento?: number }} config
+     */
+    setCharacter({ attack, portamento } = {}) {
+      const opts = {};
+      if (attack != null)     opts.envelope  = { attack };
+      if (portamento != null) opts.portamento = portamento;
+      if (Object.keys(opts).length > 0) synth.set(opts);
+    },
+
     setVolume(db, rampTime = 5) {
       synth.volume.rampTo(db, rampTime);
     },

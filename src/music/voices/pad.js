@@ -170,15 +170,24 @@ export function createPadVoice() {
      */
     setTimbreProfile(profile) {
       const profiles = {
-        warm:   { type: 'fatsine',     count: 4, spread: 22, attack: 4,   release: 10 },
-        cool:   { type: 'fatsine',     count: 3, spread: 12, attack: 3,   release: 8  },
-        cold:   { type: 'sine',        count: 1, spread: 0,  attack: 5,   release: 12 },
-        stormy: { type: 'fatsawtooth', count: 2, spread: 30, attack: 1.5, release: 6  },
+        warm:    { type: 'fatsine',     count: 4, spread: 22, attack: 4,    release: 10 },
+        cool:    { type: 'fatsine',     count: 3, spread: 12, attack: 3,    release: 8  },
+        cold:    { type: 'sine',        count: 1, spread: 0,  attack: 5,    release: 12 },
+        stormy:  { type: 'fatsawtooth', count: 2, spread: 30, attack: 1.5,  release: 6  },
+        // Sound profile timbres
+        strings: { type: 'fatsawtooth', count: 3, spread: 20, attack: 5,    decay: 2,   sustain: 0.85, release: 12 },
+        guitar:  { type: 'fatsawtooth', count: 2, spread: 32, attack: 0.3,  decay: 2,   sustain: 0.85, release: 3  },
+        piano:   { type: 'triangle',    count: 1, spread: 0,  attack: 0.01, decay: 0.6, sustain: 0.0,  release: 1.5 },
       };
       const p = profiles[profile] || profiles.cool;
       const opts = {
         oscillator: { type: p.type, count: p.count, spread: p.spread },
-        envelope:   { attack: p.attack, release: p.release },
+        envelope:   {
+          attack:  p.attack,
+          release: p.release,
+          ...(p.decay   != null && { decay:   p.decay   }),
+          ...(p.sustain != null && { sustain: p.sustain }),
+        },
       };
       synthA.set(opts);
       synthB.set(opts);

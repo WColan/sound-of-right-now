@@ -17,7 +17,7 @@ Real-time environmental data is fetched from public APIs and mapped through a pu
 
 Core mappings:
 
-- **Weather category** sets harmonic mood and texture (clear/cloudy/fog/drizzle/rain/snow/storm).
+- **Weather category** sets harmonic mood, texture, and **sound profile** (instrument character preset).
 - **Temperature + apparent temperature** choose mode/root and influence tempo and timbre profile.
 - **Time of day + sunrise/sunset proximity** shape brightness, volume scaling, and golden-hour warmth.
 - **Wind speed/direction** drive rhythmic density, stereo movement, filter sweeps, and wind-chime activity.
@@ -30,6 +30,19 @@ Core mappings:
 - **Season + latitude** add hemisphere-aware seasonal modulation (oscillator types, envelope profiles, filter warmth shift per season).
 - **UV index** opens arpeggio brightness and can trigger microtonal drift context.
 - **Biome** (land cover from OpenStreetMap) adjusts reverb wetness, master filter cutoff, and pad harmonic spread per terrain type.
+
+## Sound Profiles
+
+Weather conditions automatically select an **instrument character preset** that reshapes the synthesis of every voice while keeping all weather-driven harmony, rhythm, and mood intact:
+
+| Profile | Trigger | Character |
+|---------|---------|-----------|
+| **Ambient** | Rain, fog, snow, overcast | Default warm electronic pads — the original sound |
+| **Symphonic** | Clear sky (daytime) | Orchestral strings pad, arco bass, flute/oboe melody, prominent choir section, concert-hall reverb |
+| **Jazz** | Clear sky (night) | Piano chord stabs, plucky upright bass, saxophone melody, quiet backing brass, warm room |
+| **Rock** | Storm | Distorted electric guitar power chords, punchy bass, lead guitar melody, heavy drum kit |
+
+Profile transitions are smooth 15-second crossfades — the music doesn't snap, it gradually reshapes its instrument character as conditions change. The same chord progressions, moods, and patterns remain; only the timbre ensemble shifts.
 
 ## Movement Conductor
 
@@ -64,7 +77,8 @@ The engine runs **9 voices**:
 Main path:
 
 ```
-[Pad/Arp/Bass/Texture/Drone/Melody/Choir via spatial panners]
+[Pad] -> [HPF 90Hz] -> [Distortion (rock only)] -> [Pad Panner]
+[Arp/Bass/Texture/Drone/Melody/Choir via spatial panners]
   -> [Chorus] -> [Delay] -> [Reverb] -> [Master Filter]
   -> [Master Gain Stack] -> [Limiter] -> [Analysers] -> [Destination]
 ```
@@ -74,6 +88,7 @@ Additional paths:
 - **Percussion** uses a dedicated short reverb into the master gain stack.
 - **Bass + Drone** also feed a parallel sub-bass bus (lowpass + saturation + gain) into the master gain stack.
 - **Master Gain Stack** composes weather gain, user volume slider, and sleep-fade attenuation.
+- **Pad Distortion** is inactive (wet: 0) for ambient/symphonic/jazz; engaged at 70% wet for rock profile.
 
 ### Spatial Audio
 
@@ -176,6 +191,7 @@ src/
     engine.spatial.test.js
     mapper.js
     interpolator.js
+    soundProfile.js
     progression.js
     progression.test.js
     scale.js

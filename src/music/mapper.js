@@ -3,6 +3,7 @@ import { getMoonPhase, getMoonFullness } from '../weather/moon.js';
 import { getSeasonalFactor, getSeasonName } from '../weather/season.js';
 import { MODE_SPECTRUM } from './scale.js';
 import { CATEGORY_TO_MOOD } from './constants.js';
+import { detectSoundProfile } from './soundProfile.js';
 
 /**
  * Pure function: WeatherState → MusicalParams.
@@ -339,6 +340,8 @@ export function mapWeatherToMusic(weather, options = {}) {
     pm25GrainIntensity,
     timbreProfile,
     seasonalPalette: seasonName,
+    // Sound profile — instrument character preset driven by weather + time of day
+    soundProfile: detectSoundProfile({ weatherCategory: category, globalVelocityScale }),
     // Progression-driving params
     weatherCategory: category,
     pressureNorm: pressNorm,

@@ -86,6 +86,13 @@ vi.mock('tone', () => {
   class Limiter extends AudioNode {}
   class Analyser extends AudioNode {}
 
+  class Distortion extends AudioNode {
+    constructor() {
+      super();
+      this.wet = new Param(0);
+    }
+  }
+
   class Tremolo extends AudioNode {
     constructor() {
       super();
@@ -155,6 +162,7 @@ vi.mock('tone', () => {
     Filter,
     Gain,
     Chebyshev,
+    Distortion,
     Limiter,
     Analyser,
     Tremolo,
@@ -229,6 +237,7 @@ vi.mock('./voices/bass.js', () => ({
       setLFO() {},
       setFilterCutoff() {},
       setVolume() {},
+      setCharacter() {},
       playNote() {},
       changeNote() {},
       enableWalking() {},
