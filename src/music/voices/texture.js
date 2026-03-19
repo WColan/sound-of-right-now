@@ -34,13 +34,15 @@ export function createTextureVoice() {
   // Each band has its own panner so drops appear at random stereo positions.
   // All bands feed into rainOutputGain, which is exposed as a separate output so
   // engine.js can connect it AFTER the texture lowpass (preserving high-frequency content).
-  const rainNoise = new Tone.Noise({ type: 'white', volume: -20 });
+  const rainNoise = new Tone.Noise({ type: 'white', volume: -14 });
 
   // Band definitions: [centerFreq, Q, baseDecay, volume]
+  // Wider Q values (lower numbers) give each drop more body/character.
+  // Boosted volumes ensure drops are audible against the texture noise layer.
   const RAIN_BANDS = [
-    { freq: 1500, q: 1.5, decay: 0.09, vol: -18 },  // heavy/plop — large drops
-    { freq: 4000, q: 2.0, decay: 0.05, vol: -20 },  // medium — typical drops
-    { freq: 7500, q: 3.0, decay: 0.03, vol: -22 },  // light/tick — fine spray
+    { freq: 1200, q: 0.8, decay: 0.09, vol: -12 },  // heavy/plop — large drops
+    { freq: 3500, q: 1.2, decay: 0.05, vol: -14 },  // medium — typical drops
+    { freq: 8000, q: 1.8, decay: 0.03, vol: -16 },  // light/tick — fine spray
   ];
 
   const rainBands = RAIN_BANDS.map(({ freq, q, decay, vol }) => {
@@ -61,7 +63,7 @@ export function createTextureVoice() {
   });
 
   // Constant mist layer: highpass-filtered noise for the continuous rain hiss
-  const rainMistFilter = new Tone.Filter({ frequency: 6000, type: 'highpass', rolloff: -12 });
+  const rainMistFilter = new Tone.Filter({ frequency: 5000, type: 'highpass', rolloff: -12 });
   const rainMistGain = new Tone.Gain(0);
   rainNoise.connect(rainMistFilter);
   rainMistFilter.connect(rainMistGain);
@@ -84,25 +86,28 @@ export function createTextureVoice() {
       isRaining = true;
       rainNoise.start();
     }
-    rainOutputGain.gain.rampTo(intensity, 2);
-    rainMistGain.gain.rampTo(intensity * 0.35, 2);
+    rainOutputGain.gain.rampTo(intensity * 2.0, 2);
+    rainMistGain.gain.rampTo(intensity * 0.6, 2);
 
     if (rainLoop) rainLoop.dispose();
     rainLoop = new Tone.Loop((time) => {
-      // Light drops (high-freq band) — most frequent
-      if (Math.random() < intensity * 0.85) {
+      // Light drops (high-freq band) — most frequent; pitch varies per drop for realism
+      if (Math.random() < Math.min(intensity * 1.1, 1.0)) {
+        rainBands[2].bandFilter.frequency.value = 8000 * (0.8 + Math.random() * 0.4);
         rainBands[2].panner.pan.value = (Math.random() * 2 - 1) * 0.8;
         rainBands[2].envelope.decay = 0.02 + Math.random() * 0.02;
         rainBands[2].envelope.triggerAttackRelease(0.02 + Math.random() * 0.015, time);
       }
       // Medium drops
-      if (Math.random() < intensity * 0.55) {
+      if (Math.random() < intensity * 0.75) {
+        rainBands[1].bandFilter.frequency.value = 3500 * (0.8 + Math.random() * 0.4);
         rainBands[1].panner.pan.value = (Math.random() * 2 - 1) * 0.7;
         rainBands[1].envelope.decay = 0.04 + Math.random() * 0.02;
         rainBands[1].envelope.triggerAttackRelease(0.04 + Math.random() * 0.02, time);
       }
-      // Heavy drops — only above drizzle threshold
-      if (intensity > 0.35 && Math.random() < (intensity - 0.35) * 0.6) {
+      // Heavy drops — lower threshold so they appear in lighter rain too
+      if (intensity > 0.25 && Math.random() < (intensity - 0.25) * 0.7) {
+        rainBands[0].bandFilter.frequency.value = 1200 * (0.75 + Math.random() * 0.5);
         rainBands[0].panner.pan.value = (Math.random() * 2 - 1) * 0.5;
         rainBands[0].envelope.decay = 0.07 + Math.random() * 0.03;
         rainBands[0].envelope.triggerAttackRelease(0.06 + Math.random() * 0.03, time);

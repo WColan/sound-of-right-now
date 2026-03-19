@@ -81,8 +81,11 @@ export function mapWeatherToMusic(weather, options = {}) {
   // Windier conditions create faster, more dramatic atmospheric texture sweeps.
   // Calm (windNorm=0): 0.05 Hz slow drift, 0.3 depth (gentle)
   // Gusty (windNorm=1): 0.4 Hz fast churn, 0.9 depth (dramatic)
-  const textureAutoFilterRate  = lerp(0.05, 0.4, windNorm);
-  const textureAutoFilterDepth = lerp(0.3,  0.9, windNorm);
+  // When raining, the sweep is damped so the wind-sweep noise doesn't drown
+  // out the rain drop layer — the drops should be the dominant rain cue.
+  const isRainingCategory = ['rain', 'drizzle', 'storm'].includes(category);
+  const textureAutoFilterRate  = lerp(0.05, isRainingCategory ? 0.2  : 0.4, windNorm);
+  const textureAutoFilterDepth = lerp(0.2,  isRainingCategory ? 0.38 : 0.9, windNorm);
 
   // Wind direction → panning + pattern type
   const percussionPan = Math.sin((weather.windDirection * Math.PI) / 180);
@@ -433,7 +436,7 @@ const WEATHER_PALETTES = {
   },
   drizzle: {
     padSpread: 18,
-    textureVolume: -24,
+    textureVolume: -26,
     noiseType: 'pink',
     textureFilterCutoff: 3000,
     padVolume: -15,
@@ -442,7 +445,7 @@ const WEATHER_PALETTES = {
   },
   rain: {
     padSpread: 22,
-    textureVolume: -16,
+    textureVolume: -20,
     noiseType: 'pink',
     textureFilterCutoff: 4500,
     padVolume: -15,
