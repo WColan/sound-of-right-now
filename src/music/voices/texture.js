@@ -36,23 +36,24 @@ export function createTextureVoice() {
   // engine.js can connect it AFTER the texture lowpass (preserving high-frequency content).
   const rainNoise = new Tone.Noise({ type: 'white', volume: -17 });
 
-  // Band definitions: [centerFreq, Q, baseDecay, volume]
-  // Wider Q values (lower numbers) give each drop more body/character.
-  // Boosted volumes ensure drops are audible against the texture noise layer.
+  // Drop layer — three size classes using non-resonant filters so drops are
+  // brief wideband clicks/ticks rather than tonal pings (which sound like buzzing).
+  // Highpass for light drops (high-freq tick), lowpass for heavy drops (low thud).
+  // Very short decays keep each drop click-like, not ring-like.
   const RAIN_BANDS = [
-    { freq: 1200, q: 0.8, decay: 0.09, vol: -15 },  // heavy/plop — large drops
-    { freq: 3500, q: 1.2, decay: 0.05, vol: -17 },  // medium — typical drops
-    { freq: 8000, q: 1.8, decay: 0.03, vol: -19 },  // light/tick — fine spray
+    { freq: 600,  type: 'lowpass',  rolloff: -12, decay: 0.012, vol: -14 },  // heavy/plop
+    { freq: 2000, type: 'highpass', rolloff: -12, decay: 0.007, vol: -16 },  // medium click
+    { freq: 5500, type: 'highpass', rolloff: -12, decay: 0.004, vol: -18 },  // light tick
   ];
 
-  const rainBands = RAIN_BANDS.map(({ freq, q, decay, vol }) => {
+  const rainBands = RAIN_BANDS.map(({ freq, type, rolloff, decay, vol }) => {
     const envelope = new Tone.AmplitudeEnvelope({
-      attack: 0.003,
+      attack: 0.001,
       decay,
       sustain: 0,
-      release: decay * 0.6,
+      release: decay * 0.5,
     });
-    const bandFilter = new Tone.Filter({ frequency: freq, type: 'bandpass', Q: q });
+    const bandFilter = new Tone.Filter({ frequency: freq, type, rolloff });
     const panner = new Tone.Panner(0);
     const gain = new Tone.Gain(Tone.dbToGain(vol));
     rainNoise.connect(envelope);
@@ -62,8 +63,9 @@ export function createTextureVoice() {
     return { envelope, bandFilter, panner, gain };
   });
 
-  // Constant mist layer: highpass-filtered noise for the continuous rain hiss
-  const rainMistFilter = new Tone.Filter({ frequency: 5000, type: 'highpass', rolloff: -12 });
+  // Constant mist layer: highpass-filtered noise for the continuous rain hiss —
+  // this is the primary "rain" sound; the drops sit on top of it.
+  const rainMistFilter = new Tone.Filter({ frequency: 4000, type: 'highpass', rolloff: -12 });
   const rainMistGain = new Tone.Gain(0);
   rainNoise.connect(rainMistFilter);
   rainMistFilter.connect(rainMistGain);
@@ -87,30 +89,24 @@ export function createTextureVoice() {
       rainNoise.start();
     }
     rainOutputGain.gain.rampTo(intensity * 1.3, 2);
-    rainMistGain.gain.rampTo(intensity * 0.45, 2);
+    rainMistGain.gain.rampTo(intensity * 0.7, 2);
 
     if (rainLoop) rainLoop.dispose();
     rainLoop = new Tone.Loop((time) => {
-      // Light drops (high-freq band) — most frequent; pitch varies per drop for realism
+      // Light ticks — most frequent, very brief high-freq click
       if (Math.random() < Math.min(intensity * 1.1, 1.0)) {
-        rainBands[2].bandFilter.frequency.value = 8000 * (0.8 + Math.random() * 0.4);
         rainBands[2].panner.pan.value = (Math.random() * 2 - 1) * 0.8;
-        rainBands[2].envelope.decay = 0.02 + Math.random() * 0.02;
-        rainBands[2].envelope.triggerAttackRelease(0.02 + Math.random() * 0.015, time);
+        rainBands[2].envelope.triggerAttackRelease(0.003 + Math.random() * 0.002, time);
       }
-      // Medium drops
-      if (Math.random() < intensity * 0.75) {
-        rainBands[1].bandFilter.frequency.value = 3500 * (0.8 + Math.random() * 0.4);
+      // Medium clicks
+      if (Math.random() < intensity * 0.65) {
         rainBands[1].panner.pan.value = (Math.random() * 2 - 1) * 0.7;
-        rainBands[1].envelope.decay = 0.04 + Math.random() * 0.02;
-        rainBands[1].envelope.triggerAttackRelease(0.04 + Math.random() * 0.02, time);
+        rainBands[1].envelope.triggerAttackRelease(0.005 + Math.random() * 0.003, time);
       }
-      // Heavy drops — lower threshold so they appear in lighter rain too
-      if (intensity > 0.25 && Math.random() < (intensity - 0.25) * 0.7) {
-        rainBands[0].bandFilter.frequency.value = 1200 * (0.75 + Math.random() * 0.5);
+      // Heavy thuds — sparser
+      if (intensity > 0.25 && Math.random() < (intensity - 0.25) * 0.5) {
         rainBands[0].panner.pan.value = (Math.random() * 2 - 1) * 0.5;
-        rainBands[0].envelope.decay = 0.07 + Math.random() * 0.03;
-        rainBands[0].envelope.triggerAttackRelease(0.06 + Math.random() * 0.03, time);
+        rainBands[0].envelope.triggerAttackRelease(0.008 + Math.random() * 0.006, time);
       }
     }, '32n');
     rainLoop.start(0);
