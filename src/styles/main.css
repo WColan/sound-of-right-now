@@ -1062,8 +1062,10 @@ canvas#visualizer {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 20;
-  width: min(520px, calc(100vw - 2rem));
-  background: rgba(10, 10, 15, 0.92);
+  width: min(230px, calc(100vw - 2rem));
+  max-height: min(780px, 94vh);
+  overflow-y: auto;
+  background: rgba(10, 10, 15, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   backdrop-filter: blur(12px);
@@ -1093,17 +1095,30 @@ canvas#visualizer {
 .guitar-header {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.65rem 1rem 0.25rem;
   position: relative;
 }
 
 .guitar-chord-name {
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   font-weight: 300;
   letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.92);
   line-height: 1;
+  white-space: nowrap;
+}
+
+.guitar-next-chord-name {
+  font-size: 0.7rem;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: rgba(120, 160, 255, 0.6);
+  line-height: 1;
+  white-space: nowrap;
+  margin-left: auto;
+  margin-right: 1.4rem;
+  align-self: center;
 }
 
 .guitar-close {
@@ -1157,53 +1172,66 @@ canvas#visualizer {
   align-items: flex-start;
 }
 
-/* Side-by-side chord diagram slots */
-.guitar-chord-boxes {
+.guitar-fretboard {
   display: flex;
-  gap: 1.2rem;
   justify-content: center;
-  align-items: flex-start;
+  transition: opacity 0.12s ease;
 }
 
-.guitar-chord-slot {
+.guitar-fretboard.fading {
+  opacity: 0;
+}
+
+.guitar-fretboard svg {
+  display: block;
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+}
+
+.guitar-next-section {
+  padding: 0 1rem 0.9rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
 }
 
-.guitar-chord-slot-label {
+.guitar-next-section.hidden {
+  display: none;
+}
+
+.guitar-next-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
   font-size: 0.6rem;
   letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.22);
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  padding: 0 0 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 0.5rem;
 }
 
-.guitar-chord-slot-next .guitar-chord-slot-label {
+.guitar-next-chord-label {
   color: rgba(120, 160, 255, 0.55);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
 }
 
-.guitar-chord-slot-next .guitar-next-chord-box {
-  opacity: 0.55;
+.guitar-next-fretboard {
+  display: flex;
+  justify-content: center;
+  opacity: 0.75;
 }
 
-.guitar-chord-box svg,
-.guitar-next-chord-box svg {
-  display: block;
-  width: 110px;
-  height: auto;
-}
-
-.guitar-scale-neck svg {
+.guitar-next-fretboard svg {
   display: block;
   width: 100%;
-  max-width: 480px;
+  max-width: 110px;
   height: auto;
-}
-
-.guitar-scale-neck.hidden,
-.guitar-chord-boxes.hidden {
-  display: none;
 }
 
 @media (max-width: 520px) {
@@ -1212,15 +1240,6 @@ canvas#visualizer {
   }
 
   .guitar-chord-name {
-    font-size: 1.25rem;
-  }
-
-  .guitar-chord-boxes {
-    gap: 0.8rem;
-  }
-
-  .guitar-chord-box svg,
-  .guitar-next-chord-box svg {
-    width: 90px;
+    font-size: 1.15rem;
   }
 }

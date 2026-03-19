@@ -9,4 +9,4 @@
  * Update this single constant whenever deploying to production.
  * It is printed to the console at startup and shown on the landing overlay.
  */
-export const VERSION = '2026.03.11.1';
+export const VERSION = '2026.03.18.1';

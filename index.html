@@ -133,6 +133,7 @@
     <div class="guitar-countdown-track"><div class="guitar-countdown-bar"></div></div>
     <div class="guitar-header">
       <span class="guitar-chord-name">—</span>
+      <span class="guitar-next-chord-name"></span>
       <button class="guitar-close" aria-label="Close guitar panel">×</button>
     </div>
     <div class="guitar-tabs">
@@ -140,17 +141,13 @@
       <button class="guitar-tab" data-tab="scale">scale</button>
     </div>
     <div class="guitar-content">
-      <div class="guitar-chord-boxes">
-        <div class="guitar-chord-slot guitar-chord-slot-current">
-          <div class="guitar-chord-slot-label">now</div>
-          <div class="guitar-chord-box"></div>
-        </div>
-        <div class="guitar-chord-slot guitar-chord-slot-next">
-          <div class="guitar-chord-slot-label">next →</div>
-          <div class="guitar-next-chord-box"></div>
-        </div>
+      <div class="guitar-fretboard"></div>
+    </div>
+    <div class="guitar-next-section hidden">
+      <div class="guitar-next-divider">
+        next &nbsp;<span class="guitar-next-chord-label"></span>
       </div>
-      <div class="guitar-scale-neck hidden"></div>
+      <div class="guitar-next-fretboard"></div>
     </div>
   </div>
 

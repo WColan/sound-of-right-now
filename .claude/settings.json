@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, subprocess\nd = json.load(sys.stdin)\ncmd = d.get('tool_input', {}).get('command', '')\nif 'vercel' in cmd.lower() and 'version' not in cmd.lower():\n    print('Running tests before Vercel deploy...', flush=True)\n    r = subprocess.run(['npm', 'test'], cwd='/Users/willcolan/Developer/Claude Code/sound-of-right-now')\n    if r.returncode != 0:\n        print('Tests failed — deploy blocked. Fix tests before deploying.', flush=True)\n        sys.exit(1)\n\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, subprocess\nd = json.load(sys.stdin)\nfp = d.get('tool_input', {}).get('file_path', '')\nif '/src/music/' in fp:\n    print(f'Music file changed — running tests...', flush=True)\n    subprocess.run(['npm', 'test'], cwd='/Users/willcolan/Developer/Claude Code/sound-of-right-now')\n\""
+          }
+        ]
+      }
+    ]
+  }
+}
