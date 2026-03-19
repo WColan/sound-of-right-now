@@ -1063,9 +1063,9 @@ canvas#visualizer {
   transform: translate(-50%, -50%);
   z-index: 20;
   width: min(230px, calc(100vw - 2rem));
-  max-height: min(580px, 90vh);
+  max-height: min(780px, 94vh);
   overflow-y: auto;
-  background: rgba(10, 10, 15, 0.92);
+  background: rgba(10, 10, 15, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   backdrop-filter: blur(12px);
@@ -1186,6 +1186,51 @@ canvas#visualizer {
   display: block;
   width: 100%;
   max-width: 180px;
+  height: auto;
+}
+
+.guitar-next-section {
+  padding: 0 1rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.guitar-next-section.hidden {
+  display: none;
+}
+
+.guitar-next-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.22);
+  text-transform: uppercase;
+  padding: 0 0 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 0.5rem;
+}
+
+.guitar-next-chord-label {
+  color: rgba(120, 160, 255, 0.55);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+}
+
+.guitar-next-fretboard {
+  display: flex;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.guitar-next-fretboard svg {
+  display: block;
+  width: 100%;
+  max-width: 110px;
   height: auto;
 }
 

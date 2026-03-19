@@ -86,6 +86,167 @@ const CHORD_VOICINGS = {
   'B_min7b5':  { frets: [-1, 2, 3, 2, 3, -1] },
 };
 
+// ── Alternative voicing generation (CAGED system) ─────────────────────────────
+// Offsets from root fret for E-shape and A-shape barre voicings.
+// -1 in frets means mute; these are interval offsets, so -1 is not a real offset.
+
+const E_SHAPE_OFFSETS = {
+  maj7:   [0, 2, 1, 1, 0, 0],
+  min7:   [0, 2, 0, 0, 0, 0],
+  dom7:   [0, 2, 0, 1, 0, 0],
+  min7b5: [0, 1, 2, 0, -1, -1],  // mute B and high-e
+};
+
+const A_SHAPE_OFFSETS = {
+  maj7:   [-1, 0, 2, 1, 2, 0],
+  min7:   [-1, 0, 2, 0, 1, 0],
+  dom7:   [-1, 0, 2, 0, 2, 0],
+  min7b5: [-1, 0, 1, 0, 1, -1],  // mute high-e
+};
+
+// Root note fret positions on each string
+const ROOT_ON_E = { C: 8, 'C#': 9, D: 10, 'D#': 11, E: 0, F: 1, 'F#': 2, G: 3, 'G#': 4, A: 5, 'A#': 6, B: 7 };
+const ROOT_ON_A = { C: 3, 'C#': 4, D: 5, 'D#': 6, E: 7, F: 8, 'F#': 9, G: 10, 'G#': 11, A: 0, 'A#': 1, B: 2 };
+
+function getAltVoicing(rootName, quality) {
+  const primary = CHORD_VOICINGS[`${rootName}_${quality}`];
+  if (!primary) return null;
+
+  const primaryIsEShape = primary.barre?.fromString === 1;
+
+  function tryShape(useAShape) {
+    const offsets = useAShape ? A_SHAPE_OFFSETS[quality] : E_SHAPE_OFFSETS[quality];
+    const rootFret = useAShape ? ROOT_ON_A[rootName] : ROOT_ON_E[rootName];
+    if (!offsets || rootFret == null) return null;
+    const frets = offsets.map(o => (o === -1 ? -1 : rootFret + o));
+    if (frets.some(f => f > 12)) return null;
+    // Skip if identical to primary
+    if (primary.frets.every((f, i) => f === frets[i])) return null;
+    const barre = rootFret > 0 ? { fret: rootFret, fromString: useAShape ? 2 : 1 } : null;
+    return { frets, barre };
+  }
+
+  // Prefer the opposite shape from primary; fall back to same shape at different position
+  return tryShape(!primaryIsEShape) ?? tryShape(primaryIsEShape);
+}
+
+// ── Compact chord box (used for next-chord preview) ───────────────────────────
+// Original 5-fret horizontal chord diagram; scrolls to the relevant fret window.
+
+const BOX = {
+  W: 110, H: 148,
+  ML: 16, MT: 30,
+  SW: 14, FH: 18,
+  STRINGS: 6, FRETS: 5,
+};
+
+function renderChordBox(rootName, quality) {
+  const key = `${rootName}_${quality}`;
+  const voicing = CHORD_VOICINGS[key];
+
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${BOX.W} ${BOX.H}`,
+    width: String(BOX.W), height: String(BOX.H),
+    xmlns: 'http://www.w3.org/2000/svg', 'aria-hidden': 'true',
+  });
+
+  if (!voicing) {
+    const t = svgEl('text', { x: BOX.W / 2, y: BOX.H / 2, 'text-anchor': 'middle',
+      fill: 'rgba(255,255,255,0.4)', 'font-size': '10', 'font-family': 'inherit' });
+    t.textContent = 'no voicing';
+    svg.appendChild(t);
+    return svg;
+  }
+
+  const { frets, barre } = voicing;
+
+  const activeFrets = frets.filter(f => f > 0);
+  const minFret = activeFrets.length ? Math.min(...activeFrets) : 1;
+  const baseFret = minFret >= 5 ? minFret : 1;
+
+  if (baseFret > 1) {
+    const lbl = svgEl('text', {
+      x: BOX.ML - 4, y: BOX.MT + BOX.FH * 0.6,
+      'text-anchor': 'end', fill: 'rgba(255,255,255,0.5)',
+      'font-size': '9', 'font-family': 'inherit',
+    });
+    lbl.textContent = `${baseFret}fr`;
+    svg.appendChild(lbl);
+  }
+
+  if (baseFret === 1) {
+    svg.appendChild(svgEl('rect', {
+      x: BOX.ML, y: BOX.MT - 3,
+      width: BOX.SW * (BOX.STRINGS - 1), height: 4,
+      fill: 'rgba(255,255,255,0.85)', rx: '1',
+    }));
+  }
+
+  for (let f = 1; f <= BOX.FRETS; f++) {
+    svg.appendChild(svgEl('line', {
+      x1: BOX.ML, y1: BOX.MT + f * BOX.FH,
+      x2: BOX.ML + BOX.SW * (BOX.STRINGS - 1), y2: BOX.MT + f * BOX.FH,
+      stroke: 'rgba(255,255,255,0.18)', 'stroke-width': '1',
+    }));
+  }
+
+  for (let s = 0; s < BOX.STRINGS; s++) {
+    const x = BOX.ML + s * BOX.SW;
+    svg.appendChild(svgEl('line', {
+      x1: x, y1: BOX.MT, x2: x, y2: BOX.MT + BOX.FRETS * BOX.FH,
+      stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1',
+    }));
+  }
+
+  for (let s = 0; s < BOX.STRINGS; s++) {
+    const f = frets[s];
+    const bx = BOX.ML + s * BOX.SW;
+    const by = BOX.MT - 10;
+    if (f === -1) {
+      const t = svgEl('text', { x: bx, y: by + 4, 'text-anchor': 'middle',
+        fill: 'rgba(255,255,255,0.45)', 'font-size': '10', 'font-family': 'inherit' });
+      t.textContent = '×';
+      svg.appendChild(t);
+    } else if (f === 0) {
+      svg.appendChild(svgEl('circle', { cx: bx, cy: by,
+        r: '4', fill: 'none', stroke: 'rgba(255,255,255,0.55)', 'stroke-width': '1.5' }));
+    }
+  }
+
+  if (barre) {
+    const adjustedFret = barre.fret - baseFret + 1;
+    const barY = BOX.MT + (adjustedFret - 0.5) * BOX.FH;
+    const x1 = BOX.ML + (barre.fromString - 1) * BOX.SW;
+    const x2 = BOX.ML + (BOX.STRINGS - 1) * BOX.SW;
+    svg.appendChild(svgEl('rect', {
+      x: x1, y: barY - 5.5, width: x2 - x1, height: 11,
+      rx: '5.5', fill: 'rgba(255,255,255,0.75)',
+    }));
+  }
+
+  for (let s = 0; s < BOX.STRINGS; s++) {
+    const f = frets[s];
+    if (f <= 0) continue;
+    const adjustedFret = f - baseFret + 1;
+    if (adjustedFret < 1 || adjustedFret > BOX.FRETS) continue;
+    if (barre && f === barre.fret && s >= (barre.fromString - 1)) continue;
+    svg.appendChild(svgEl('circle', {
+      cx: BOX.ML + s * BOX.SW, cy: BOX.MT + (adjustedFret - 0.5) * BOX.FH,
+      r: '6', fill: 'rgba(255,255,255,0.9)',
+    }));
+  }
+
+  const label = svgEl('text', {
+    x: BOX.W / 2, y: BOX.H - 4,
+    'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+    'font-size': '9', 'font-family': 'inherit', 'letter-spacing': '0.04em',
+  });
+  label.textContent = formatChordName(rootName, quality);
+  svg.appendChild(label);
+
+  return svg;
+}
+
 // ── SVG helpers ───────────────────────────────────────────────────────────────
 
 function svgEl(tag, attrs = {}) {
@@ -129,8 +290,8 @@ function buildFretboardSkeleton(svg) {
     fill: 'rgba(255,255,255,0.03)', rx: '2',
   }));
 
-  // Inlay dots (right of fretboard)
-  const inlayX = ML + SW * (STRINGS - 1) + 12;
+  // Inlay dots (left of fretboard, low-E side)
+  const inlayX = ML - 12;
   for (let fr = 1; fr <= FRETS; fr++) {
     if (INLAY_FRETS.has(fr)) {
       svg.appendChild(svgEl('circle', {
@@ -188,7 +349,34 @@ function makeFretboardSVG() {
 
 // ── Vertical Chord Box SVG ────────────────────────────────────────────────────
 
-function renderVerticalChordBox(rootName, quality) {
+const PRIMARY_COLOR = { barre: 'rgba(255,255,255,0.75)', dot: 'rgba(255,255,255,0.9)' };
+const ALT_COLOR     = { barre: 'rgba(80,200,175,0.70)',  dot: 'rgba(80,200,175,0.90)' };
+
+function renderVoicingDots(svg, voicing, color) {
+  const { frets, barre } = voicing;
+  if (barre) {
+    const barY = cy(barre.fret);
+    const x1 = cx(barre.fromString - 1);
+    const x2 = cx(VFRET.STRINGS - 1);
+    svg.appendChild(svgEl('rect', {
+      x: x1, y: barY - 7,
+      width: x2 - x1, height: 14,
+      rx: '7', fill: color.barre,
+    }));
+  }
+  for (let s = 0; s < VFRET.STRINGS; s++) {
+    const f = frets[s];
+    if (f <= 0) continue;
+    if (f > VFRET.FRETS) continue;
+    if (barre && f === barre.fret && s >= (barre.fromString - 1)) continue;
+    svg.appendChild(svgEl('circle', {
+      cx: cx(s), cy: cy(f),
+      r: '9', fill: color.dot,
+    }));
+  }
+}
+
+function renderVerticalChordBox(rootName, quality, { showAlt = true } = {}) {
   const key = `${rootName}_${quality}`;
   const voicing = CHORD_VOICINGS[key];
 
@@ -206,13 +394,11 @@ function renderVerticalChordBox(rootName, quality) {
     return svg;
   }
 
-  const { frets, barre } = voicing;
-
   buildFretboardSkeleton(svg);
 
-  // Open (○) / Mute (×) indicators above nut
+  // Open (○) / Mute (×) indicators above nut for primary voicing
   for (let s = 0; s < VFRET.STRINGS; s++) {
-    const f = frets[s];
+    const f = voicing.frets[s];
     const x = cx(s);
     const y = VFRET.MT - 11;
     if (f === -1) {
@@ -230,32 +416,14 @@ function renderVerticalChordBox(rootName, quality) {
     }
   }
 
-  // Barre bar
-  if (barre) {
-    const barY = cy(barre.fret);
-    const x1 = cx(barre.fromString - 1);
-    const x2 = cx(VFRET.STRINGS - 1);
-    svg.appendChild(svgEl('rect', {
-      x: x1, y: barY - 7,
-      width: x2 - x1, height: 14,
-      rx: '7', fill: 'rgba(255,255,255,0.75)',
-    }));
+  // Alt voicing (teal) drawn first so primary (white) renders on top
+  if (showAlt) {
+    const altVoicing = getAltVoicing(rootName, quality);
+    if (altVoicing) renderVoicingDots(svg, altVoicing, ALT_COLOR);
   }
 
-  // Finger dots
-  for (let s = 0; s < VFRET.STRINGS; s++) {
-    const f = frets[s];
-    if (f <= 0) continue;
-    if (f > VFRET.FRETS) continue;
-
-    // Skip strings covered by the barre (already drawn)
-    if (barre && f === barre.fret && s >= (barre.fromString - 1)) continue;
-
-    svg.appendChild(svgEl('circle', {
-      cx: cx(s), cy: cy(f),
-      r: '9', fill: 'rgba(255,255,255,0.9)',
-    }));
-  }
+  // Primary voicing (white/gray)
+  renderVoicingDots(svg, voicing, PRIMARY_COLOR);
 
   return svg;
 }
@@ -365,18 +533,33 @@ let chordNameEl = null;
 let nextChordNameEl = null;
 let countdownBarEl = null;
 let fretboardContainer = null;
+let nextFretboardContainer = null;
+let nextChordSection = null;
+let nextChordLabelEl = null;
 let lastChordInfo = null;
 
 function renderFretboard(chordInfo) {
   if (!fretboardContainer) return;
-  const { rootName, quality, scaleTones, chordTones } = chordInfo;
+  const { rootName, quality, scaleTones, chordTones, nextChord } = chordInfo;
   const svg = currentTab === 'chord'
     ? renderVerticalChordBox(rootName, quality)
     : renderVerticalScaleNeck(scaleTones, chordTones, rootName);
 
-  // Brief opacity fade for tab switches; on chord change just swap immediately
   fretboardContainer.innerHTML = '';
   fretboardContainer.appendChild(svg);
+
+  // Next chord mini-preview (chord tab only)
+  if (nextChordSection && nextFretboardContainer && nextChordLabelEl) {
+    if (currentTab === 'chord' && nextChord) {
+      const nextSvg = renderChordBox(nextChord.chordRootName, nextChord.quality);
+      nextFretboardContainer.innerHTML = '';
+      nextFretboardContainer.appendChild(nextSvg);
+      nextChordLabelEl.textContent = formatChordName(nextChord.chordRootName, nextChord.quality);
+      nextChordSection.classList.remove('hidden');
+    } else {
+      nextChordSection.classList.add('hidden');
+    }
+  }
 }
 
 function showTab(tab) {
@@ -410,6 +593,9 @@ export function setupGuitarPanel(el) {
   nextChordNameEl = el.querySelector('.guitar-next-chord-name');
   countdownBarEl = el.querySelector('.guitar-countdown-bar');
   fretboardContainer = el.querySelector('.guitar-fretboard');
+  nextFretboardContainer = el.querySelector('.guitar-next-fretboard');
+  nextChordSection = el.querySelector('.guitar-next-section');
+  nextChordLabelEl = el.querySelector('.guitar-next-chord-label');
 
   el.querySelector('[data-tab="chord"]')?.addEventListener('click', () => showTab('chord'));
   el.querySelector('[data-tab="scale"]')?.addEventListener('click', () => showTab('scale'));
