@@ -352,6 +352,17 @@ function makeFretboardSVG() {
 const PRIMARY_COLOR = { barre: 'rgba(255,255,255,0.75)', dot: 'rgba(255,255,255,0.9)' };
 const ALT_COLOR     = { barre: 'rgba(80,200,175,0.70)',  dot: 'rgba(80,200,175,0.90)' };
 
+const SCALE_COLORS_CURRENT = {
+  root:      'rgba(255,210,80,0.95)',
+  chordTone: 'rgba(255,210,80,0.7)',
+  scaleTone: 'rgba(255,255,255,0.4)',
+};
+const SCALE_COLORS_NEXT = {
+  root:      'rgba(80,200,175,0.95)',
+  chordTone: 'rgba(80,200,175,0.70)',
+  scaleTone: 'rgba(80,200,175,0.45)',
+};
+
 function renderVoicingDots(svg, voicing, color) {
   const { frets, barre } = voicing;
   if (barre) {
@@ -430,7 +441,7 @@ function renderVerticalChordBox(rootName, quality, { showAlt = true } = {}) {
 
 // ── Vertical Scale Neck SVG ───────────────────────────────────────────────────
 
-function renderVerticalScaleNeck(scaleTones, chordTones, rootName) {
+function renderVerticalScaleNeck(scaleTones, chordTones, rootName, { colors = SCALE_COLORS_CURRENT } = {}) {
   const scalePCs = new Set((scaleTones ?? []).map(noteNameToPitchClass));
   const chordPCs = new Set((chordTones ?? []).map(noteNameToPitchClass));
   const rootPC = noteNameToPitchClass(rootName);
@@ -467,7 +478,7 @@ function renderVerticalScaleNeck(scaleTones, chordTones, rootName) {
       if (isRoot) {
         svg.appendChild(svgEl('rect', {
           x: dotX - 7, y: dotY - 7, width: 14, height: 14,
-          rx: '3', fill: 'rgba(255,210,80,0.95)',
+          rx: '3', fill: colors.root,
         }));
         const t = svgEl('text', {
           x: dotX, y: dotY + 4, 'text-anchor': 'middle',
@@ -479,12 +490,12 @@ function renderVerticalScaleNeck(scaleTones, chordTones, rootName) {
       } else if (isChordTone) {
         svg.appendChild(svgEl('circle', {
           cx: dotX, cy: dotY, r: '6',
-          fill: 'rgba(255,210,80,0.7)',
+          fill: colors.chordTone,
         }));
       } else {
         svg.appendChild(svgEl('circle', {
           cx: dotX, cy: dotY, r: '5',
-          fill: 'none', stroke: 'rgba(255,255,255,0.4)', 'stroke-width': '1.5',
+          fill: 'none', stroke: colors.scaleTone, 'stroke-width': '1.5',
         }));
       }
     }
@@ -499,6 +510,11 @@ let cdStart = null;
 let cdDuration = null;
 let cdRaf = null;
 let cdBar = null;
+
+// Scale crossfade state
+let scaleCurrentLayer = null;
+let scaleNextLayer    = null;
+let scaleCrossfadeRaf = null;
 
 function startCountdown(ms, barEl) {
   cdBar = barEl;
@@ -523,6 +539,52 @@ function tickCd() {
 
 export function stopCountdown() {
   if (cdRaf) { cancelAnimationFrame(cdRaf); cdRaf = null; }
+  stopScaleFade();
+}
+
+// ── Scale crossfade RAF ───────────────────────────────────────────────────────
+
+function tickScaleFade() {
+  if (!scaleCurrentLayer || !scaleNextLayer || !cdDuration) {
+    scaleCrossfadeRaf = null;
+    return;
+  }
+  const remaining = 1 - Math.min(1, (performance.now() - cdStart) / cdDuration);
+  const FADE_START = 0.25;
+  if (remaining < FADE_START) {
+    const t = (FADE_START - remaining) / FADE_START;
+    const ts = t * t * (3 - 2 * t); // smoothstep
+    scaleCurrentLayer.style.opacity = String(1 - ts);
+    scaleNextLayer.style.opacity    = String(ts);
+  }
+  scaleCrossfadeRaf = requestAnimationFrame(tickScaleFade);
+}
+
+function startScaleFade() {
+  if (scaleCrossfadeRaf) cancelAnimationFrame(scaleCrossfadeRaf);
+  scaleCrossfadeRaf = requestAnimationFrame(tickScaleFade);
+}
+
+function stopScaleFade() {
+  if (scaleCrossfadeRaf) { cancelAnimationFrame(scaleCrossfadeRaf); scaleCrossfadeRaf = null; }
+}
+
+function ensureScaleLayers() {
+  if (scaleCurrentLayer && fretboardContainer.contains(scaleCurrentLayer)) return;
+  fretboardContainer.innerHTML = '';
+  scaleCurrentLayer = document.createElement('div');
+  scaleCurrentLayer.className = 'scale-layer scale-layer--current';
+  scaleNextLayer = document.createElement('div');
+  scaleNextLayer.className = 'scale-layer scale-layer--next';
+  fretboardContainer.appendChild(scaleCurrentLayer);
+  fretboardContainer.appendChild(scaleNextLayer);
+}
+
+function teardownScaleLayers() {
+  stopScaleFade();
+  scaleCurrentLayer = null;
+  scaleNextLayer    = null;
+  fretboardContainer?.classList.remove('scale-mode');
 }
 
 // ── Panel state ───────────────────────────────────────────────────────────────
@@ -541,16 +603,45 @@ let lastChordInfo = null;
 function renderFretboard(chordInfo) {
   if (!fretboardContainer) return;
   const { rootName, quality, scaleTones, chordTones, nextChord } = chordInfo;
-  const svg = currentTab === 'chord'
-    ? renderVerticalChordBox(rootName, quality)
-    : renderVerticalScaleNeck(scaleTones, chordTones, rootName);
 
+  if (currentTab === 'scale') {
+    fretboardContainer.classList.add('scale-mode');
+    ensureScaleLayers();
+
+    // Current chord scale (gold)
+    scaleCurrentLayer.innerHTML = '';
+    scaleCurrentLayer.style.opacity = '1';
+    scaleCurrentLayer.appendChild(
+      renderVerticalScaleNeck(scaleTones, chordTones, rootName, { colors: SCALE_COLORS_CURRENT })
+    );
+
+    // Next chord scale (teal)
+    scaleNextLayer.innerHTML = '';
+    scaleNextLayer.style.opacity = '0';
+    if (nextChord) {
+      scaleNextLayer.appendChild(
+        renderVerticalScaleNeck(
+          nextChord.scaleTones, nextChord.chordTones, nextChord.chordRootName,
+          { colors: SCALE_COLORS_NEXT }
+        )
+      );
+    }
+
+    nextChordSection?.classList.add('hidden');
+    return;
+  }
+
+  // Chord tab — tear down scale layers if switching from scale
+  fretboardContainer.classList.remove('scale-mode');
+  teardownScaleLayers();
+
+  const svg = renderVerticalChordBox(rootName, quality);
   fretboardContainer.innerHTML = '';
   fretboardContainer.appendChild(svg);
 
-  // Next chord mini-preview (chord tab only)
+  // Next chord mini-preview
   if (nextChordSection && nextFretboardContainer && nextChordLabelEl) {
-    if (currentTab === 'chord' && nextChord) {
+    if (nextChord) {
       const nextSvg = renderChordBox(nextChord.chordRootName, nextChord.quality);
       nextFretboardContainer.innerHTML = '';
       nextFretboardContainer.appendChild(nextSvg);
@@ -563,6 +654,7 @@ function renderFretboard(chordInfo) {
 }
 
 function showTab(tab) {
+  const previousTab = currentTab;
   currentTab = tab;
   const chordBtn = panel?.querySelector('[data-tab="chord"]');
   const scaleBtn = panel?.querySelector('[data-tab="scale"]');
@@ -575,11 +667,13 @@ function showTab(tab) {
   }
   // Fade out, swap, fade in
   if (fretboardContainer && lastChordInfo) {
+    if (previousTab === 'scale') teardownScaleLayers();
     fretboardContainer.classList.add('fading');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         renderFretboard(lastChordInfo);
         fretboardContainer.classList.remove('fading');
+        if (tab === 'scale' && lastChordInfo.nextChord) startScaleFade();
       });
     });
   }
@@ -609,6 +703,7 @@ export function showGuitarPanel() {
 export function hideGuitarPanel() {
   panel?.classList.add('hidden');
   stopCountdown();
+  teardownScaleLayers();
 }
 
 export function toggleGuitarPanel() {
@@ -632,9 +727,11 @@ export function onGuitarChordChange(chordInfo) {
       : '';
   }
 
+  stopScaleFade();
   renderFretboard(chordInfo);
 
   const durationMs = intervalSeconds ? intervalSeconds * 1000 : 8000;
   stopCountdown();
   if (countdownBarEl) startCountdown(durationMs, countdownBarEl);
+  if (currentTab === 'scale' && nextChord) startScaleFade();
 }

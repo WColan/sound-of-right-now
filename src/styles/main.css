@@ -1189,6 +1189,21 @@ canvas#visualizer {
   height: auto;
 }
 
+.guitar-fretboard.scale-mode {
+  position: relative;
+  height: 440px; /* matches VFRET.H */
+}
+
+.scale-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.scale-layer--current { opacity: 1; }
+.scale-layer--next    { opacity: 0; }
+
 .guitar-next-section {
   padding: 0 1rem 0.9rem;
   display: flex;
