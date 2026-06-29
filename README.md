@@ -1,4 +1,30 @@
-# Sound of Right Now
+# Sound of Now — the SON family
+
+A monorepo of generative-music web apps built on one shared idea: **a live data
+source, sculpted into evolving sound.** Each app shares the domain-agnostic audio
+toolkit in [`packages/core`](packages/core) (`@son/core`) but has its own data
+source, musical language, and visuals.
+
+| App | What it sonifies | Musical language |
+| --- | --- | --- |
+| [**SONAR**](apps/sonar) — *Sound of Right Now* | Live weather, air quality, tides, biome at your location | Diatonic mood-progressions, 9 ambient voices, long-form movements |
+| [**SONDE**](apps/sonde) — *sounding the heavens* | Real-time orbital geometry of the solar system | Just-intonation "music of the spheres," emergent polyrhythm, alignment events |
+
+```
+packages/core   @son/core — shared sonification primitives (scale, spatial, movement, interpolator)
+apps/sonar      @son/sonar — the weather app (below)
+apps/sonde      @son/sonde — the celestial app
+```
+
+Run from the repo root: `npm install`, then `npm test` (all workspaces),
+`npm run dev:sonar` or `npm run dev:sonde`.
+
+A future sensor-data source (e.g. a Sensy S1 Pro) is designed to plug into the
+same pipeline via the [`@son/core` DataSource contract](packages/core/src/datasource.js).
+
+---
+
+# Sound of Right Now (SONAR)
 
 A generative ambient music web app that sonifies live weather and environmental conditions. Every location sounds different, every hour sounds different, and the music evolves continuously without repeating.
 

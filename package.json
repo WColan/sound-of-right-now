@@ -1,19 +1,19 @@
 {
-  "name": "sound-of-right-now",
+  "name": "sound-of-now-monorepo",
   "private": true,
-  "version": "2026.03.11.1",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
-  },
-  "dependencies": {
-    "@vercel/analytics": "^1.6.1",
-    "tone": "^15.1.22"
+    "dev:sonar": "npm run dev -w @son/sonar",
+    "dev:sonde": "npm run dev -w @son/sonde",
+    "build:sonar": "npm run build -w @son/sonar",
+    "build:sonde": "npm run build -w @son/sonde",
+    "build": "npm run build -w @son/sonar && npm run build -w @son/sonde"
   },
   "devDependencies": {
     "vite": "^7.3.1",

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#04050a" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>SONDE — sounding the heavens</title>
+  <meta name="description" content="A generative sonification of the real-time geometry of the solar system. Music of the spheres, computed live in your browser." />
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+<body>
+  <canvas id="sonde-orrery"></canvas>
+
+  <!-- Start overlay: a user gesture is required to start the audio context -->
+  <div id="sonde-overlay">
+    <div class="overlay-inner">
+      <h1 class="overlay-title">SONDE</h1>
+      <p class="overlay-tagline">the sound of right now, sounding the heavens</p>
+      <p class="overlay-blurb">
+        The solar system, heard as it actually is. Each planet's orbital period
+        becomes a note; its motion pans, filters and bends the sound. Alignments
+        ring like bells. Warp time to hear the orbits turn.
+      </p>
+      <button id="sonde-begin" class="begin-btn">Begin</button>
+      <p id="sonde-version" class="overlay-version"></p>
+    </div>
+  </div>
+
+  <!-- Info panel -->
+  <aside id="sonde-info" class="info-panel hidden">
+    <div id="sonde-time" class="info-time">—</div>
+    <div id="sonde-nowplaying" class="info-nowplaying"></div>
+  </aside>
+
+  <!-- Transport -->
+  <div id="sonde-transport" class="transport hidden">
+    <button id="sonde-play" class="t-btn" aria-label="pause">❚❚</button>
+    <label class="t-group">
+      <span class="t-icon">🔊</span>
+      <input id="sonde-volume" class="t-slider" type="range" min="0" max="100" value="80" aria-label="volume" />
+    </label>
+    <label class="t-group t-speed">
+      <span class="t-icon">⏱</span>
+      <input id="sonde-speed" class="t-slider" type="range" min="0" max="5" step="1" value="0" aria-label="time speed" />
+      <span id="sonde-speed-label" class="t-speed-label">Live</span>
+    </label>
+    <button id="sonde-now" class="t-btn t-now">Now</button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
