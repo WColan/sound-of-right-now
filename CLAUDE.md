@@ -1,14 +1,25 @@
-# Sound of Right Now — Claude Instructions
+# Sound of Now (SON family) — Claude Instructions
+
+This is an **npm-workspaces monorepo**. Shared sonification primitives live in
+`packages/core` (`@son/core`); each app lives under `apps/`:
+
+- `apps/sonar` (`@son/sonar`) — *Sound of Right Now*, the weather app (paths below).
+- `apps/sonde` (`@son/sonde`) — the celestial "music of the spheres" app.
+
+`@son/core` is consumed by SONDE today; SONAR still uses its own local copies of
+the shared modules and will be migrated onto `@son/core` in a later PR.
 
 ## Release Checklist (Required Before Every Vercel Deploy)
 
 Before any deployment to Vercel — no exceptions, no reminders needed — always do both of these:
 
-1. **Bump the version** in `src/version.js`.
+1. **Bump the version** in the deployed app's `version.js`
+   (`apps/sonar/src/version.js` or `apps/sonde/src/version.js`).
    - Format: `YYYY.MM.DD.N` (CalVer — use today's date, increment `N` if multiple releases on same day).
    - Example: `'2026.03.13.1'`
 
-2. **Update `README.md`** to reflect any new features, controls, voices, or architectural changes introduced in this release.
+2. **Update the relevant `README.md`** (the app's and/or the root) to reflect any
+   new features, controls, voices, or architectural changes introduced in this release.
    - Controls section (keyboard shortcuts, panels, UI)
    - Voices table (if voices were added/removed/renamed)
    - Architecture diagrams (if signal path changed)
@@ -18,37 +29,56 @@ Do this as part of the commit before deploying, not as an afterthought.
 
 ## Versioning
 
-- File: `src/version.js`
+- Files: `apps/<app>/src/version.js` (one per app)
 - Scheme: CalVer `YYYY.MM.DD.N[.P]`
   - `N` = daily build counter (start at 1, increment for same-day releases)
   - `P` = optional point release for patches within the same build
 
 ## Tech Stack
 
-- Vanilla JS (ES modules), Vite v7, Tone.js v15, Canvas 2D, Vitest
-- Deployed to Vercel
+- Vanilla JS (ES modules), Vite v7, Tone.js v15, Canvas 2D, Vitest, npm workspaces
+- Each app deploys to Vercel as its own project (root = `apps/sonar` / `apps/sonde`)
 
 ## Key Paths
 
-- Version: `src/version.js`
-- Entry: `src/main.js`
-- Music engine: `src/music/engine.js`
-- Weather → Music mapping (pure fn): `src/music/mapper.js`
-- Parameter interpolation: `src/music/interpolator.js`
-- Chord/harmony progression: `src/music/progression.js`
-- Long-form expression arcs: `src/music/movement.js`
-- Scale/note utilities: `src/music/scale.js`
-- UI: `src/ui/`
-- Weather fetching: `src/weather/fetcher.js`
-- Voices: `src/music/voices/` (pad, arpeggio, bass, drone, melody, texture, percussion, windchime, choir)
+### Shared — `@son/core` (`packages/core/src/`)
+- Scale + just-intonation utilities: `scale.js`
+- Spatial (HRTF panner): `spatial.js`
+- Long-form expression arcs: `movement.js`
+- Generic param interpolator: `interpolator.js`
+- DataSource / Mapper contract (Phase-2 seam): `datasource.js`
+
+### SONAR — `apps/sonar/src/`
+- Version: `version.js`
+- Entry: `main.js`
+- Music engine: `music/engine.js`
+- Weather → Music mapping (pure fn): `music/mapper.js`
+- Parameter interpolation: `music/interpolator.js`
+- Chord/harmony progression: `music/progression.js`
+- Voices: `music/voices/` (pad, arpeggio, bass, drone, melody, texture, percussion, windchime, choir)
+- Weather fetching: `weather/fetcher.js`
+- UI: `ui/`
+
+### SONDE — `apps/sonde/src/`
+- Version: `version.js`
+- Entry: `main.js`
+- Sky data (ephemeris + clock): `sky/ephemeris.js`, `sky/clock.js`
+- Sky → Music mapping (pure fn): `music/mapper.js`
+- Audio engine + bus: `music/engine.js`, `music/audio-bus.js`
+- Voices: `music/voices/` (sun, body, lunar, galilean, aspect)
+- UI: `ui/` (orrery, controls, display)
 
 ## Dev Commands
 
 ```
-npm run dev          # Dev server at localhost:5173 (HMR enabled)
-npm run build        # Production bundle → dist/
-npm test             # Run tests once
-npm run test:watch   # Continuous test watch
+npm install                  # Install all workspaces (run from repo root)
+npm test                     # Run ALL workspace tests once (from root)
+npm run test:watch           # Continuous test watch
+
+npm run dev:sonar            # SONAR dev server (or: npm run dev -w @son/sonar)
+npm run dev:sonde            # SONDE dev server (or: npm run dev -w @son/sonde)
+npm run build:sonar          # Build SONAR → apps/sonar/dist
+npm run build:sonde          # Build SONDE → apps/sonde/dist
 ```
 
 ## Architecture: Data Flow

@@ -1,0 +1,15 @@
+{
+  "name": "@son/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain-agnostic sonification primitives shared across the Sound-of-Now (SON) family of apps.",
+  "exports": {
+    "./scale": "./src/scale.js",
+    "./spatial": "./src/spatial.js",
+    "./movement": "./src/movement.js",
+    "./interpolator": "./src/interpolator.js",
+    "./datasource": "./src/datasource.js",
+    "./test/fake-dom": "./src/test/fake-dom.js"
+  }
+}
