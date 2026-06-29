@@ -51,6 +51,7 @@ sky back to the present instant.
 | 🔊 slider | Master volume |
 | ⏱ slider | Time warp: Live · 1 hr/s · 1 day/s · 1 week/s · 1 month/s · 1 year/s |
 | Now | Snap the sky back to the live present |
+| Hover / tap a body | Inspect any planet, the Sun, Earth, or the Moon — its name and how it's shaping the sound right now (pitch, pan, brightness, shimmer, retrograde). Tap again or tap empty space to dismiss. |
 
 ## Architecture
 

@@ -194,6 +194,43 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Body inspection tooltip ── */
+.sonde-tooltip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  max-width: 17rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(10, 13, 24, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  backdrop-filter: blur(10px);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+.tt-title {
+  color: var(--fg);
+  font-size: 0.98rem;
+  letter-spacing: 0.04rem;
+  margin-bottom: 0.1rem;
+}
+.tt-sub {
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.04rem;
+  margin-bottom: 0.5rem;
+}
+.tt-line { margin-top: 0.28rem; }
+.tt-label {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.1rem;
+  margin-right: 0.25rem;
+}
+
 @media (max-width: 560px) {
   .info-panel { width: 12rem; font-size: 0.76rem; }
   .t-slider { width: 4rem; }

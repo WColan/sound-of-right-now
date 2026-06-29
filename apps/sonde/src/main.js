@@ -43,6 +43,7 @@ let controls = null;
 let rafId = null;
 let userVolume = 0.8;
 let speedLabel = 'Live';
+let latestParams = null;
 let isPlaying = true;
 let pausedSimTime = null;
 
@@ -59,6 +60,7 @@ function onSkySample(simTime) {
   const snapshot = getSkySnapshot(simTime);
   const aspects = getAspects(snapshot);
   const params = mapSkyToMusic(snapshot, aspects);
+  latestParams = params;
 
   interpolator.update(params);
   engine.updateGalilean(getGalileanPhases(simTime));
@@ -84,7 +86,7 @@ function renderLoop() {
   const simTime = clock.getSimTime();
   const snapshot = getSkySnapshot(simTime);
   const aspects = getAspects(snapshot);
-  orrery.render(snapshot, aspects);
+  orrery.render(snapshot, aspects, latestParams);
   rafId = requestAnimationFrame(renderLoop);
 }
 

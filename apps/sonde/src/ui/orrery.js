@@ -6,7 +6,11 @@
  * heliocentric longitude, alignment lines when planets form aspects, Earth as
  * the listener's vantage, and a moon-phase glyph. Presentation only — it reads
  * snapshots produced by the sky layer and FFT data from the engine analyser.
+ *
+ * Bodies are also hover/tap interactive: pointing at one shows a tooltip naming
+ * it and explaining how it's shaping the sound right now (see ./influence.js).
  */
+import { describeBody, findBodyAt } from './influence.js';
 
 const BODY_VIEW = {
   Mercury: { color: '#b9a07a', meanAU: 0.387, size: 2.5 },
@@ -29,6 +33,88 @@ export function createOrrery(canvas, analyser) {
   let height = 0;
   let dpr = Math.min(window.devicePixelRatio || 1, 2);
   let stars = [];
+
+  // ── Interaction state ──
+  let lastSnapshot = null;
+  let lastParams = null;
+  let hitTargets = []; // [{ name, x, y, hitR }] rebuilt every frame
+  let hovered = null;  // body under the mouse (transient)
+  let pinned = null;   // body tapped/clicked (sticky, for touch)
+  const activeName = () => pinned || hovered;
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'sonde-tooltip';
+  tooltip.style.display = 'none';
+  document.body.appendChild(tooltip);
+
+  function renderTooltipContent(name) {
+    const info = describeBody(name, lastSnapshot, lastParams);
+    tooltip.innerHTML =
+      `<div class="tt-title">${info.title}</div>` +
+      (info.subtitle ? `<div class="tt-sub">${info.subtitle}</div>` : '') +
+      info.lines.map((l) => `<div class="tt-line"><span class="tt-label">${l.label}</span> ${l.value}</div>`).join('');
+  }
+
+  function positionTooltip(clientX, clientY) {
+    const pad = 14;
+    const w = tooltip.offsetWidth;
+    const h = tooltip.offsetHeight;
+    let x = clientX + pad;
+    let y = clientY + pad;
+    if (x + w > window.innerWidth - 8) x = clientX - w - pad;
+    if (y + h > window.innerHeight - 8) y = clientY - h - pad;
+    tooltip.style.left = `${Math.max(8, x)}px`;
+    tooltip.style.top = `${Math.max(8, y)}px`;
+  }
+
+  function showTooltip(name, clientX, clientY) {
+    if (!name || !lastSnapshot) { hideTooltip(); return; }
+    renderTooltipContent(name);
+    tooltip.style.display = 'block';
+    positionTooltip(clientX, clientY);
+  }
+
+  function hideTooltip() {
+    tooltip.style.display = 'none';
+  }
+
+  function pointFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function onPointerMove(e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return; // touch handled on tap
+    const { x, y } = pointFromEvent(e);
+    const hit = findBodyAt(x, y, hitTargets);
+    hovered = hit ? hit.name : null;
+    if (pinned) return; // a pinned (tapped) body wins until dismissed
+    if (hovered) showTooltip(hovered, e.clientX, e.clientY);
+    else hideTooltip();
+  }
+
+  function onPointerDown(e) {
+    const { x, y } = pointFromEvent(e);
+    const hit = findBodyAt(x, y, hitTargets);
+    if (hit) {
+      pinned = pinned === hit.name ? null : hit.name;
+      if (pinned) showTooltip(pinned, e.clientX, e.clientY);
+      else hideTooltip();
+    } else {
+      pinned = null;
+      hovered = null;
+      hideTooltip();
+    }
+  }
+
+  function onPointerLeave() {
+    hovered = null;
+    if (!pinned) hideTooltip();
+  }
+
+  canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+  canvas.addEventListener('pointerdown', onPointerDown, { passive: true });
+  canvas.addEventListener('pointerleave', onPointerLeave, { passive: true });
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -91,8 +177,27 @@ export function createOrrery(canvas, analyser) {
     ctx.restore();
   }
 
-  function render(snapshot, aspects = []) {
+  /** Ring + name label drawn around the hovered/tapped body. */
+  function drawHighlight(x, y, r, label) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillText(label, x, y - r - 11);
+    ctx.restore();
+  }
+
+  function render(snapshot, aspects = [], params = null) {
     if (!width || !height) return;
+    lastSnapshot = snapshot;
+    lastParams = params;
+    const targets = [];
+    const active = activeName();
     const cx = width / 2;
     const cy = height / 2;
 
@@ -163,6 +268,8 @@ export function createOrrery(canvas, analyser) {
     ctx.beginPath();
     ctx.arc(cx, cy, sunR, 0, Math.PI * 2);
     ctx.fill();
+    targets.push({ name: 'Sun', x: cx, y: cy, hitR: Math.max(sunR + 4, 20) });
+    if (active === 'Sun') drawHighlight(cx, cy, sunR, 'Sun');
 
     // Earth (the vantage)
     if (snapshot.earth) {
@@ -175,6 +282,8 @@ export function createOrrery(canvas, analyser) {
       ctx.beginPath();
       ctx.arc(pe.x, pe.y, EARTH_VIEW.size + 3, 0, Math.PI * 2);
       ctx.stroke();
+      targets.push({ name: 'Earth', x: pe.x, y: pe.y, hitR: Math.max(EARTH_VIEW.size + 8, 14) });
+      if (active === 'Earth') drawHighlight(pe.x, pe.y, EARTH_VIEW.size, 'Earth');
     }
 
     // Planets
@@ -209,10 +318,21 @@ export function createOrrery(canvas, analyser) {
         ctx.stroke();
         ctx.lineWidth = 1;
       }
+
+      targets.push({ name, x: p.x, y: p.y, hitR: Math.max(view.size + 8, 14) });
+      if (active === name) drawHighlight(p.x, p.y, view.size, name);
     }
 
     // Moon-phase glyph, bottom-left
-    if (snapshot.moon) drawMoon(snapshot.moon.illumination, 38, height - 38, 16);
+    if (snapshot.moon) {
+      drawMoon(snapshot.moon.illumination, 38, height - 38, 16);
+      targets.push({ name: 'Moon', x: 38, y: height - 38, hitR: 22 });
+      if (active === 'Moon') drawHighlight(38, height - 38, 16, 'Moon');
+    }
+
+    // Publish hit targets and keep an open tooltip's values live under time-warp.
+    hitTargets = targets;
+    if (active) renderTooltipContent(active);
   }
 
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
@@ -226,6 +346,10 @@ export function createOrrery(canvas, analyser) {
     dispose() {
       if (ro) ro.disconnect();
       else window.removeEventListener('resize', resize);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      tooltip.remove();
     },
   };
 }
