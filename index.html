@@ -81,6 +81,7 @@
     <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Weather details">weather</button>
     <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="Audio details">audio</button>
     <button id="conductor-btn" class="control-btn menu-item" role="menuitem" aria-label="Conductor">conductor</button>
+    <button id="worlds-btn" class="control-btn menu-item" role="menuitem" aria-label="Soundworlds">worlds</button>
     <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
     <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">
       <span class="share-label">share</span>
@@ -96,6 +97,12 @@
   <div id="audio-panel" class="info-panel hidden">
     <button class="panel-close" aria-label="Close">×</button>
     <div id="audio-content"></div>
+  </div>
+
+  <div id="soundworld-panel" class="info-panel soundworld-panel hidden">
+    <button class="panel-close" aria-label="Close">×</button>
+    <div class="soundworld-header">soundworlds</div>
+    <div id="soundworld-list" class="soundworld-list"></div>
   </div>
 
   <div id="conductor-panel" class="conductor-panel hidden">

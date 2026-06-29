@@ -60,9 +60,10 @@ export function createSoundEngine() {
   let weatherGainScale = 1;
   let userGainScale = 1;
   let sleepGainScale = 1;
+  let transitionGainScale = 1; // Momentary duck during soundworld changes
 
   function applyMasterGain(duration = 0) {
-    const target = weatherGainScale * userGainScale * sleepGainScale;
+    const target = weatherGainScale * userGainScale * sleepGainScale * transitionGainScale;
     if (duration > 0) {
       masterVelocity.gain.linearRampTo(target, duration);
     } else {
@@ -307,6 +308,19 @@ export function createSoundEngine() {
   // Movement tension level — passed through to generateProgression for harmonic blending
   let currentMovementTension = 0;
 
+  // Soundworld harmonic grammar — overrides the weather-derived mood when set.
+  // null = default behavior (mood derived from weather category).
+  let currentGrammar = null;
+
+  // Centralised progression generation so every call site uses the current
+  // root/mode/category/tension AND the active soundworld grammar.
+  function genProg() {
+    return generateProgression(
+      currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
+      currentMovementTension, { grammar: currentGrammar }
+    );
+  }
+
   // Microtonal drift — random walk on synth detune AudioParams
   let microtonalInterval = null;
 
@@ -461,10 +475,7 @@ export function createSoundEngine() {
     onCycleEnd() {
       // Generate a fresh progression with current musical context
       // so the music never loops the exact same sequence
-      currentProgression = generateProgression(
-        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
-        currentMovementTension
-      );
+      currentProgression = genProg();
       return currentProgression;
     },
   });
@@ -627,6 +638,18 @@ export function createSoundEngine() {
     },
 
     /**
+     * Momentary master duck used when switching soundworlds, so structurally
+     * different "songs" cut cleanly rather than smearing two grammars together.
+     * Multiplies into the master gain alongside user/weather/sleep scales.
+     * @param {number} scale - 0 (silent) to 1 (full)
+     * @param {number} rampTime - seconds
+     */
+    setTransitionGainScale(scale, rampTime = 0.1) {
+      transitionGainScale = scale ?? 1;
+      applyMasterGain(rampTime);
+    },
+
+    /**
      * Start the engine. Call after Tone.start().
      * @param {object} params - Initial musical parameters from the mapper
      */
@@ -665,7 +688,7 @@ export function createSoundEngine() {
         // Progression params
         weatherCategory, pressureNorm,
         arpeggioRhythmPattern, percussionPattern,
-        melodyMood,
+        melodyMood, grammar,
       } = params;
 
       // Update scale/harmony state
@@ -673,12 +696,10 @@ export function createSoundEngine() {
       currentMode = scaleType;
       currentWeatherCategory = weatherCategory || 'clear';
       currentPressureNorm = pressureNorm ?? 0.5;
+      currentGrammar = grammar ?? null;
 
       // ── Generate initial chord progression ──
-      currentProgression = generateProgression(
-        currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
-        currentMovementTension
-      );
+      currentProgression = genProg();
       progressionPlayer.setProgression(currentProgression, true);
       // Note: the progression player's onChordChange callback will handle
       // setting up the pad, arpeggio, bass, drone, and melody with the first chord.
@@ -888,10 +909,7 @@ export function createSoundEngine() {
         // Pressure — regenerate progression with new harmonic rhythm
         case 'pressureNorm': {
           currentPressureNorm = value;
-          currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
-            currentMovementTension
-          );
+          currentProgression = genProg();
           progressionPlayer.setProgression(currentProgression, false); // Queue for next cycle
           break;
         }
@@ -913,10 +931,7 @@ export function createSoundEngine() {
           if (key === 'scaleType') currentMode = value;
 
           // Generate a new progression in the new key
-          currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
-            currentMovementTension
-          );
+          currentProgression = genProg();
           // Key/mode changes are musically significant — start immediately
           progressionPlayer.setProgression(currentProgression, true);
           break;
@@ -926,11 +941,17 @@ export function createSoundEngine() {
           const oldCategory = currentWeatherCategory;
           currentWeatherCategory = value;
           const immediate = shouldImmediatelyChange(oldCategory, value);
-          currentProgression = generateProgression(
-            currentRoot, currentMode, currentWeatherCategory, currentPressureNorm,
-            currentMovementTension
-          );
+          currentProgression = genProg();
           progressionPlayer.setProgression(currentProgression, immediate);
+          break;
+        }
+
+        case 'grammar': {
+          // Soundworld harmonic grammar changed — regenerate immediately so the
+          // new harmonic personality takes hold at the next chord.
+          currentGrammar = value ?? null;
+          currentProgression = genProg();
+          progressionPlayer.setProgression(currentProgression, true);
           break;
         }
 

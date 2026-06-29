@@ -775,6 +775,69 @@ canvas#visualizer {
   letter-spacing: 0.04em;
 }
 
+/* ── Soundworld gallery panel ── */
+.soundworld-header {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.soundworld-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.soundworld-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  padding: 0.55rem 0.7rem;
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.soundworld-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.soundworld-card.active {
+  border-color: rgba(140, 180, 255, 0.7);
+  background: rgba(120, 160, 255, 0.12);
+}
+
+.soundworld-card.suggested {
+  border-color: rgba(255, 220, 140, 0.55);
+}
+
+.soundworld-name {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.soundworld-blurb {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+}
+
+.soundworld-auto .soundworld-name::after {
+  content: ' ·';
+  color: var(--text-dim);
+}
+
 /* ── Pull-to-refresh indicator ── */
 .ptr-indicator {
   position: fixed;

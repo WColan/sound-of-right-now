@@ -10,6 +10,13 @@ const MODES = {
   // Extended minor variants — used contextually by mapper.js, not in MODE_SPECTRUM
   harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
   melodicMinor:  [0, 2, 3, 5, 7, 9, 11],
+  // Exotic 7-note scales — reachable only via soundworld recipe scalePools.
+  // All have 7 degrees, so the diatonic chord/voice-leading machinery applies
+  // unchanged. They give distinct harmonic colors per soundworld.
+  phrygian:         [0, 1, 3, 5, 7, 8, 10], // dark, Spanish/flamenco minor
+  phrygianDominant: [0, 1, 4, 5, 7, 8, 10], // exotic ♭2 + major 3rd (desert)
+  doubleHarmonic:   [0, 1, 4, 5, 7, 8, 11], // two augmented 2nds (Byzantine)
+  harmonicMajor:    [0, 2, 4, 5, 7, 8, 11], // major with ♭6 (bittersweet)
 };
 
 // Ordered dark to bright for temperature mapping

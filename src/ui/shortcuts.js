@@ -10,12 +10,14 @@ export function handleMainKeydown(event, {
   audioPanel,
   conductorPanel,
   guitarPanel,
+  soundworldPanel,
   locationBtn,
   mixBtn,
   toggleWeatherPanel,
   toggleAudioPanel,
   toggleConductorPanel,
   toggleGuitarPanel,
+  toggleSoundworldPanel,
   canvas,
 }) {
   if (!isEngineReady) return;
@@ -30,6 +32,7 @@ export function handleMainKeydown(event, {
       secondaryMenuController?.close?.();
       weatherPanel?.classList.add('hidden');
       audioPanel?.classList.add('hidden');
+      soundworldPanel?.classList.add('hidden');
       if (guitarPanel && !guitarPanel.classList.contains('hidden') && toggleGuitarPanel) {
         toggleGuitarPanel();
       }
@@ -67,6 +70,10 @@ export function handleMainKeydown(event, {
     case 'g':
     case 'G':
       toggleGuitarPanel?.();
+      break;
+    case 'v':
+    case 'V':
+      toggleSoundworldPanel?.();
       break;
     default:
       break;

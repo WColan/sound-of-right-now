@@ -93,10 +93,11 @@ const DISCRETE_PARAMS = new Set([
   'percussionPattern',
   'melodyMood',
   'seasonalPalette',
+  'grammar',             // Soundworld harmonic grammar — snaps progression
 ]);
 
 // These are metadata, not engine params
-const META_PARAMS = new Set(['_meta', 'isRaining', 'rainIntensity']);
+const META_PARAMS = new Set(['_meta', 'isRaining', 'rainIntensity', 'worldId']);
 
 /**
  * Create an interpolator instance.
