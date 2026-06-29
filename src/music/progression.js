@@ -16,6 +16,7 @@ const DIATONIC_CHORDS = {
   aeolian:    ['min7', 'min7b5', 'maj7', 'min7', 'min7', 'maj7', 'dom7'],
   lydian:     ['maj7', 'dom7', 'min7', 'min7', 'min7b5', 'maj7', 'min7'],
   locrian:    ['min7b5', 'maj7', 'min7', 'min7', 'maj7', 'dom7', 'min7'],
+  phrygian:   ['min7', 'maj7', 'dom7', 'min7', 'min7b5', 'maj7', 'min7'],
 };
 
 // ── Markov transition weights ──
@@ -85,6 +86,59 @@ const TRANSITION_WEIGHTS = {
     6: { 1: 5, 2: 1, 3: 2, 4: 4, 5: 2, 6: 0, 7: 1 },
     7: { 1: 5, 2: 1, 3: 2, 4: 3, 5: 2, 6: 2, 7: 0 },
   },
+
+  // ── Soundworld grammars ──
+  // Named harmonic personalities a recipe can request independent of weather.
+  // glacial — near-static; orbits I with ♭VI/iv color, almost no V pull
+  glacial: {
+    1: { 1: 0, 2: 1, 3: 1, 4: 4, 5: 2, 6: 5, 7: 1 },
+    2: { 1: 6, 2: 0, 3: 0, 4: 2, 5: 1, 6: 1, 7: 0 },
+    3: { 1: 5, 2: 0, 3: 0, 4: 2, 5: 1, 6: 2, 7: 1 },
+    4: { 1: 6, 2: 1, 3: 1, 4: 0, 5: 2, 6: 3, 7: 1 },
+    5: { 1: 6, 2: 0, 3: 0, 4: 2, 5: 0, 6: 3, 7: 1 },
+    6: { 1: 5, 2: 1, 3: 1, 4: 3, 5: 1, 6: 0, 7: 2 },
+    7: { 1: 5, 2: 0, 3: 1, 4: 2, 5: 1, 6: 2, 7: 0 },
+  },
+  // radiant — bright, uplifting plagal/authentic motion with ii + vi color
+  radiant: {
+    1: { 1: 0, 2: 3, 3: 1, 4: 6, 5: 5, 6: 3, 7: 1 },
+    2: { 1: 3, 2: 0, 3: 1, 4: 4, 5: 5, 6: 2, 7: 1 },
+    3: { 1: 3, 2: 1, 3: 0, 4: 4, 5: 2, 6: 3, 7: 1 },
+    4: { 1: 6, 2: 3, 3: 1, 4: 0, 5: 5, 6: 3, 7: 1 },
+    5: { 1: 7, 2: 2, 3: 1, 4: 3, 5: 0, 6: 3, 7: 1 },
+    6: { 1: 3, 2: 3, 3: 1, 4: 5, 5: 3, 6: 0, 7: 1 },
+    7: { 1: 4, 2: 1, 3: 1, 4: 3, 5: 2, 6: 2, 7: 0 },
+  },
+  // tempest — wide, chromatic, restless; even more adventurous than 'tense'
+  tempest: {
+    1: { 1: 0, 2: 4, 3: 3, 4: 4, 5: 5, 6: 3, 7: 4 },
+    2: { 1: 3, 2: 0, 3: 3, 4: 3, 5: 6, 6: 3, 7: 3 },
+    3: { 1: 3, 2: 3, 3: 0, 4: 4, 5: 3, 6: 5, 7: 4 },
+    4: { 1: 4, 2: 4, 3: 3, 4: 0, 5: 5, 6: 3, 7: 4 },
+    5: { 1: 5, 2: 3, 3: 3, 4: 3, 5: 0, 6: 5, 7: 4 },
+    6: { 1: 3, 2: 4, 3: 4, 4: 4, 5: 4, 6: 0, 7: 4 },
+    7: { 1: 5, 2: 3, 3: 4, 4: 4, 5: 4, 6: 3, 7: 0 },
+  },
+  // monsoon — flowing, cyclic ii-V-I with modal IV/♭VII; smooth but in motion
+  monsoon: {
+    1: { 1: 0, 2: 5, 3: 2, 4: 5, 5: 3, 6: 3, 7: 3 },
+    2: { 1: 2, 2: 0, 3: 1, 4: 3, 5: 6, 6: 2, 7: 2 },
+    3: { 1: 3, 2: 2, 3: 0, 4: 4, 5: 2, 6: 4, 7: 2 },
+    4: { 1: 4, 2: 4, 3: 1, 4: 0, 5: 5, 6: 2, 7: 3 },
+    5: { 1: 5, 2: 3, 3: 1, 4: 3, 5: 0, 6: 4, 7: 2 },
+    6: { 1: 3, 2: 4, 3: 2, 4: 4, 5: 3, 6: 0, 7: 3 },
+    7: { 1: 4, 2: 2, 3: 2, 4: 4, 5: 2, 6: 3, 7: 0 },
+  },
+  // arid — sparse exotic; strong ♭II↔I pull (flamenco/desert), static otherwise
+  arid: {
+    1: { 1: 0, 2: 5, 3: 1, 4: 3, 5: 2, 6: 4, 7: 1 },
+    2: { 1: 7, 2: 0, 3: 1, 4: 2, 5: 1, 6: 2, 7: 1 },
+    3: { 1: 4, 2: 2, 3: 0, 4: 3, 5: 1, 6: 3, 7: 1 },
+    4: { 1: 5, 2: 3, 3: 1, 4: 0, 5: 2, 6: 3, 7: 1 },
+    5: { 1: 5, 2: 3, 3: 1, 4: 2, 5: 0, 6: 3, 7: 1 },
+    6: { 1: 5, 2: 3, 3: 1, 4: 3, 5: 1, 6: 0, 7: 1 },
+    7: { 1: 4, 2: 2, 3: 1, 4: 2, 5: 1, 6: 2, 7: 0 },
+  },
 };
 
 // ── Starting degree weights per mood ──
@@ -95,6 +149,11 @@ const STARTING_WEIGHTS = {
   tense:      { 1: 4,  2: 3, 3: 1, 4: 2, 5: 2, 6: 1, 7: 1 },
   suspended:  { 1: 10, 2: 0, 3: 0, 4: 1, 5: 1, 6: 0, 7: 0 },
   sparse:     { 1: 8,  2: 0, 3: 1, 4: 3, 5: 1, 6: 1, 7: 0 },
+  glacial:    { 1: 10, 2: 0, 3: 0, 4: 1, 5: 0, 6: 2, 7: 0 },
+  radiant:    { 1: 8,  2: 1, 3: 1, 4: 3, 5: 2, 6: 2, 7: 0 },
+  tempest:    { 1: 4,  2: 3, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2 },
+  monsoon:    { 1: 6,  2: 2, 3: 1, 4: 3, 5: 2, 6: 2, 7: 1 },
+  arid:       { 1: 9,  2: 2, 3: 0, 4: 1, 5: 1, 6: 1, 7: 0 },
 };
 
 // ── Progression length ranges per mood ──
@@ -105,6 +164,11 @@ const PROGRESSION_LENGTHS = {
   tense:      { min: 6, max: 10 },
   suspended:  { min: 3, max: 5 },
   sparse:     { min: 3, max: 5 },
+  glacial:    { min: 3, max: 5 },
+  radiant:    { min: 4, max: 7 },
+  tempest:    { min: 6, max: 10 },
+  monsoon:    { min: 4, max: 8 },
+  arid:       { min: 3, max: 6 },
 };
 
 // ── Progression templates (retained as reference) ──
@@ -177,6 +241,11 @@ const SEC_DOM_PROBABILITY = {
   calm:       0.08,
   suspended:  0,
   sparse:     0,
+  glacial:    0,
+  radiant:    0.10,
+  tempest:    0.35,
+  monsoon:    0.15,
+  arid:       0.05,
 };
 
 // Target degrees that benefit from secondary dominant preparation.
@@ -341,10 +410,19 @@ export function blendWeights(weightsA, weightsB, t) {
  * @param {string} weatherCategory - e.g. 'clear', 'rain', 'storm'
  * @param {number} pressureNorm - 0-1 normalized pressure
  * @param {number} [tensionLevel=0] - 0–1 movement tension (blends toward tense weights)
+ * @param {object} [options]
+ * @param {string} [options.grammar] - Named harmonic grammar (soundworld override).
+ *   When provided and known, it replaces the weather-category-derived mood,
+ *   letting a soundworld declare its harmonic personality independent of weather.
  * @returns {Progression}
  */
-export function generateProgression(root, mode, weatherCategory, pressureNorm, tensionLevel = 0) {
-  const mood = CATEGORY_TO_MOOD[weatherCategory] || 'calm';
+export function generateProgression(root, mode, weatherCategory, pressureNorm, tensionLevel = 0, options = {}) {
+  // A soundworld grammar overrides the weather-derived mood when it's a known
+  // grammar; otherwise fall back to the category mapping (default experience).
+  const grammar = options.grammar;
+  const mood = (grammar && TRANSITION_WEIGHTS[grammar])
+    ? grammar
+    : (CATEGORY_TO_MOOD[weatherCategory] || 'calm');
   const harmonicRhythm = getHarmonicRhythm(pressureNorm, weatherCategory);
   const qualities = DIATONIC_CHORDS[mode] || DIATONIC_CHORDS.ionian;
 

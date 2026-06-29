@@ -9,10 +9,10 @@ Open the app, share your location (or search for any city, or try a random locat
 Real-time environmental data is fetched from public APIs and mapped through a pure-function music pipeline:
 
 ```
-[Weather APIs] -> [Mapper] -> [Interpolator] -> [Movement Conductor] -> [Sound Engine] -> [Audio Output]
-                                                                         |
-                                                                         v
-                                                                    [Visualizer]
+[Weather APIs] -> [Soundworld select] -> [Mapper] -> [Interpolator] -> [Movement Conductor] -> [Sound Engine] -> [Audio Output]
+                                                                                               |
+                                                                                               v
+                                                                                          [Visualizer]
 ```
 
 Core mappings:
@@ -30,6 +30,36 @@ Core mappings:
 - **Season + latitude** add hemisphere-aware seasonal modulation (oscillator types, envelope profiles, filter warmth shift per season).
 - **UV index** opens arpeggio brightness and can trigger microtonal drift context.
 - **Biome** (land cover from OpenStreetMap) adjusts reverb wetness, master filter cutoff, and pad harmonic spread per terrain type.
+
+## Soundworlds
+
+Beyond per-parameter mapping, the app composes in distinct **soundworlds** — each a structurally different "song" with its own orchestration, harmonic vocabulary, timbre, form, and effect character. A frigid winter night and a warm summer afternoon are no longer the same engine with different dials; they are different pieces.
+
+A soundworld is expressed as a declarative **recipe** layered over the existing engine (it does not replace it):
+
+- **Orchestration mask** — which voices are present (e.g. *Frigid Night* drops arpeggio and percussion entirely).
+- **Harmonic grammar** — a named progression personality (`glacial`, `radiant`, `tempest`, `monsoon`, `arid`, plus the weather moods) independent of the weather category.
+- **Scale pool** — constrains the key to a world's allowed scales, including exotic colors (`phrygian`, `phrygianDominant`, `doubleHarmonic`, `harmonicMajor`).
+- **Timbre / mood / pattern overrides** — oscillator character, melody mood, noise type, arpeggio + percussion patterns.
+- **Form personality** — the movement conductor's arc personality for that world.
+- **Numeric fine-tuning** — reverb, tempo bias, spread, sub-bass, etc.
+
+Weather **auto-selects** the best-matching world each update; when nothing matches strongly the default **Aurora** world (the original weather-driven experience, preserved unchanged) wins. The world is **navigable**: open the gallery (menu → *worlds*, or press `V`) to preview and **lock** any world ("what does a blizzard sound like?"), and *Auto* returns to weather-driven selection. Switching worlds runs a brief master duck so structurally different songs cut in cleanly.
+
+| Soundworld | Triggers | Character |
+| --- | --- | --- |
+| **Aurora** (default) | mild / temperate / anything unmatched | The original weather-driven ambient drift |
+| **Frigid Night** | sub-zero, night, snow, arctic | Crystalline, sparse; drone + cold pad + chimes, no percussion |
+| **Warm Afternoon** | warm (≥18°C), clear/cloudy, daytime | Radiant lydian/ionian, fat warm pad, lush chorus |
+| **Tempest** | thunderstorm | Driving percussion, brown-noise, sub-bass, stormy saw |
+| **Coastal Fog** | fog (esp. coastal/humid) | Suspended, cavernous reverb, no percussion |
+| **Monsoon** | warm rain/drizzle | Rippling arpeggio, prominent rain, dripping percussion |
+| **Arid Expanse** | desert biome or very hot+dry | Dry, exotic phrygian-dominant, heat-shimmer detune |
+| **Snowfall** | snowfall (daytime) | Hushed, ethereal, white-noise, no percussion |
+| **Alpine** | mountain biome / high elevation | Vast lydian openness, enormous reverb, drone + choir |
+| **Tropical Night** | warm humid night (esp. tropical) | Lush, gentle nocturne; choir + chimes forward |
+
+New worlds are a single-file addition under `src/music/soundworlds/worlds/`.
 
 ## Movement Conductor
 
@@ -129,6 +159,7 @@ UI controls include:
 - Weather detail panel (temperature, conditions, humidity, wind, pressure, cloud cover, UV, AQI, sunrise/sunset, moon phase, season, biome, tide)
 - Audio mappings panel (source → output: e.g., "72°F → D Minor", "78% humidity → 6.2s reverb")
 - Conductor panel (movement timeline rail, smooth playhead, phase labels, listening duration counter, personality override buttons)
+- Soundworlds gallery (browse, preview/lock any world, or *Auto* for weather-driven selection)
 - Sleep timer (off/30/60/90 with 60s fade-out)
 - Share link (lat/lng permalink copy)
 - Info display: location + local time + curated blend line (temp, condition, key, BPM)
@@ -141,6 +172,7 @@ Keyboard shortcuts:
 - `W`: toggle weather panel
 - `A`: toggle audio mappings panel
 - `C`: toggle conductor panel
+- `V`: toggle soundworlds gallery
 - `G`: toggle guitar practice panel (vertical fretboard — chord voicing or full scale view; next chord shown in header)
 - `Escape`: close menus and panels
 - `F`: request fullscreen
@@ -191,6 +223,10 @@ src/
       percussion.js
       windchime.js
       choir.js
+    soundworlds/
+      recipe.js          # recipe schema, DEFAULT_RECIPE, applyRecipeToParams
+      index.js           # registry + selectWorld()
+      worlds/            # one file per world (frigid-night, tempest, …)
   weather/
     fetcher.js
     fetcher.test.js
@@ -206,6 +242,7 @@ src/
     controls.js
     visualizer.js
     guitar.js
+    soundworlds.js       # gallery panel (browse / lock / Auto)
   styles/
     main.css
 ```

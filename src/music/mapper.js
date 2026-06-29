@@ -3,6 +3,7 @@ import { getMoonPhase, getMoonFullness } from '../weather/moon.js';
 import { getSeasonalFactor, getSeasonName } from '../weather/season.js';
 import { MODE_SPECTRUM } from './scale.js';
 import { CATEGORY_TO_MOOD } from './constants.js';
+import { applyRecipeToParams } from './soundworlds/recipe.js';
 
 /**
  * Pure function: WeatherState → MusicalParams.
@@ -17,6 +18,12 @@ import { CATEGORY_TO_MOOD } from './constants.js';
  * @param {number} [options.pm25] - PM2.5 concentration in μg/m³ (null if unavailable)
  * @param {number} [options.latitude] - For seasonal + hemisphere awareness
  * @param {number} [options.pressureTrend] - -1 (falling) to +1 (rising); 0 = stable
+ * @param {object} [options.recipe] - Active soundworld recipe. When present, its
+ *   orchestration mask, discrete overrides, scale pool, grammar, and numeric
+ *   fine-tuning are applied to the base params. Omit (or pass the default world)
+ *   for the original weather-driven experience.
+ * @param {object} [options.context] - Environmental context (forwarded to the
+ *   recipe's paramOverrides).
  * @returns {object} MusicalParams
  */
 export function mapWeatherToMusic(weather, options = {}) {
@@ -286,7 +293,7 @@ export function mapWeatherToMusic(weather, options = {}) {
   const melodyPanRange = lerp(0.2, 0.45, moonFullness);
   const melodyPan = Math.sin(now.getTime() / 60000) * melodyPanRange;
 
-  return {
+  const params = {
     rootNote,
     scaleType,
     bpm: Math.round(bpm),
@@ -345,6 +352,11 @@ export function mapWeatherToMusic(weather, options = {}) {
     arpeggioRhythmPattern,
     percussionPattern,
     melodyMood,
+    // Soundworld harmonic grammar — null = weather-derived mood (default world).
+    // A recipe may override this via applyRecipeToParams below.
+    grammar: null,
+    // Active soundworld id (metadata; ignored by the interpolator).
+    worldId: options.recipe?.id ?? 'default',
     // Pass through for display
     _meta: {
       category,
@@ -359,6 +371,13 @@ export function mapWeatherToMusic(weather, options = {}) {
       biome: biomeId,
     },
   };
+
+  // ── Soundworld recipe post-processing ──
+  // With the default world (or no recipe) this is an identity transform, so the
+  // original experience is preserved exactly.
+  return options.recipe
+    ? applyRecipeToParams(params, options.recipe, options.context, weather)
+    : params;
 }
 
 // --- Temperature Mapping ---

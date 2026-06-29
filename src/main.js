@@ -6,8 +6,10 @@ import { createInterpolator } from './music/interpolator.js';
 import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
 import { buildShareSearch, parseSharedCoordinates, resolveStartupLocation } from './weather/share.js';
 import { getMoonriseTime, getMoonsetTime, getMoonPhaseName } from './weather/moon.js';
-import { describeWeatherCode } from './weather/codes.js';
+import { describeWeatherCode, categorizeWeatherCode } from './weather/codes.js';
 import { getSeasonName } from './weather/season.js';
+import { selectWorld, getWorld } from './music/soundworlds/index.js';
+import { setupSoundworldPanel } from './ui/soundworlds.js';
 import { degreesToCompass } from './ui/display.js';
 import { createWeatherFetcher } from './weather/fetcher.js';
 import { createTideFetcher } from './weather/tides.js';
@@ -25,6 +27,7 @@ import {
   createMovementConductor,
   CONDUCTOR_ENABLED,
   PHASE_TEMPLATE,
+  WEATHER_PERSONALITY,
   smoothstep,
 } from './music/movement.js';
 import { VERSION } from './version.js';
@@ -60,6 +63,13 @@ let isPlaying = true; // Track play/pause state for the pause button
 let currentLocationRequestId = 0;
 let userVolumeScale = 0.8;
 let secondaryMenuController = null;
+
+// ── Soundworld navigation state ──
+// lockedWorldId === null → weather auto-selects the world each update.
+// Otherwise the user has locked a specific world from the gallery.
+let lockedWorldId = null;
+let activeWorldId = 'default';
+let soundworldPanel = null;
 
 // ── Voice volume param mapping (module-level for applyExpression access) ──
 const VOICE_VOLUME_PARAMS_MAP = {
@@ -284,12 +294,80 @@ if (import.meta.hot) {
 }
 
 /**
+ * Build the environmental context used to select a soundworld.
+ * Derived from raw weather (independent of the mapper) so it can be computed
+ * before mapping.
+ */
+function buildWorldContext(weather) {
+  const now = new Date();
+  const isNight = (weather.sunrise && weather.sunset)
+    ? (now < weather.sunrise || now > weather.sunset)
+    : false;
+  return {
+    category: categorizeWeatherCode(weather.weatherCode),
+    season: getSeasonName(now, currentLatitude ?? 40),
+    isNight,
+    temperature: weather.temperature,
+    apparentTemperature: weather.apparentTemperature ?? weather.temperature,
+    humidity: weather.humidity,
+    windSpeed: weather.windSpeed,
+    latitude: currentLatitude ?? 40,
+    biome: currentBiome,
+    uvIndex: weather.uvIndex ?? 0,
+    cloudCover: weather.cloudCover ?? 0,
+    elevation: weather.elevation ?? 0,
+  };
+}
+
+/**
+ * React to a soundworld change: brief master duck so the new "song" cuts in
+ * cleanly, hand the world's conductor personality to the movement conductor,
+ * and refresh the gallery's active highlight.
+ */
+function handleWorldChange(recipe, category) {
+  if (recipe.id === activeWorldId) return;
+  activeWorldId = recipe.id;
+
+  if (CONDUCTOR_ENABLED && movementConductor) {
+    // A world with an explicit personality forces it; the default world (null
+    // personality) restores weather-driven behavior so a prior world's forced
+    // personality (e.g. Tempest's 'dramatic') does not linger after switching back.
+    const personality = recipe.form?.personality
+      || WEATHER_PERSONALITY[category]
+      || 'contemplative';
+    movementConductor.setPersonalityOverride(personality);
+  }
+
+  if (engine?.setTransitionGainScale) {
+    engine.setTransitionGainScale(0.4, 1.2);          // duck
+    setTimeout(() => engine?.setTransitionGainScale?.(1, 3), 1300); // restore
+  }
+
+  soundworldPanel?.setActiveWorld?.(activeWorldId, lockedWorldId !== null);
+}
+
+/**
+ * Re-evaluate world selection immediately (e.g. after a manual lock change)
+ * using the most recent weather state.
+ */
+function refreshWorldSelection() {
+  const w = weatherFetcher?.lastState;
+  if (w) onWeatherUpdate(w);
+  else soundworldPanel?.setActiveWorld?.(activeWorldId, lockedWorldId !== null);
+}
+
+/**
  * Process a weather update: map to music, interpolate, update display + visuals.
  */
 function onWeatherUpdate(weather) {
   if (!interpolator || !display || !visualizer) return;
 
   const pressureTrend = getPressureTrend(weather.pressure);
+
+  // ── Soundworld selection ──
+  // Weather auto-selects unless the user has locked a world from the gallery.
+  const worldContext = buildWorldContext(weather);
+  const recipe = lockedWorldId ? getWorld(lockedWorldId) : selectWorld(worldContext);
 
   const musicalParams = mapWeatherToMusic(weather, {
     tideLevel: currentTideData?.waterLevel ?? null,
@@ -298,9 +376,12 @@ function onWeatherUpdate(weather) {
     latitude: currentLatitude ?? 40,
     pressureTrend,
     biome: currentBiome,
+    recipe,
+    context: worldContext,
   });
 
   interpolator.update(musicalParams);
+  handleWorldChange(recipe, worldContext.category);
   display.update(weather, musicalParams, currentTideData, currentAqiData);
 
   // Update conductor weather context for personality selection
@@ -471,6 +552,9 @@ async function startForLocation(latitude, longitude, locationName, { fadeIn = fa
     engine.dispose();
     stopCountdown();
     engine = createSoundEngine();
+    // Fresh engine starts on the default world; the next weather update will
+    // re-apply the active/locked world via handleWorldChange.
+    activeWorldId = 'default';
     engine.start({ bpm: 72 });
     engine.onChordChange((chordInfo) => {
       visualizer.onChordChange(chordInfo);
@@ -969,6 +1053,24 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   toggleAudioPanel = panelControls.toggleAudioPanel;
   toggleConductorPanel = panelControls.toggleConductorPanel;
 
+  // ── Soundworld gallery panel ──
+  const soundworldPanelEl = document.getElementById('soundworld-panel');
+  const soundworldListEl = document.getElementById('soundworld-list');
+  const soundworldCloseBtn = soundworldPanelEl?.querySelector('.panel-close');
+  const worldsMenuBtn = document.getElementById('worlds-btn');
+  soundworldPanel = setupSoundworldPanel({
+    panel: soundworldPanelEl,
+    listEl: soundworldListEl,
+    openBtn: worldsMenuBtn,
+    closeBtn: soundworldCloseBtn,
+    onBeforeOpen: () => panelControls.hideAllPanels(),
+    onSelectWorld: (id) => {
+      lockedWorldId = id;
+      refreshWorldSelection();
+    },
+  });
+  soundworldPanel.setActiveWorld(activeWorldId, lockedWorldId !== null);
+
   // Wire share button — copies current location permalink to clipboard
   const shareBtn = document.getElementById('share-btn');
   if (shareBtn) {
@@ -1032,12 +1134,14 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
       audioPanel,
       conductorPanel,
       guitarPanel: guitarPanelEl,
+      soundworldPanel: soundworldPanelEl,
       locationBtn: document.getElementById('location-btn'),
       mixBtn,
       toggleWeatherPanel,
       toggleAudioPanel,
       toggleConductorPanel,
       toggleGuitarPanel: () => toggleGuitarPanelFn(),
+      toggleSoundworldPanel: () => soundworldPanel?.toggle(),
       canvas,
     });
   });
