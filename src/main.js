@@ -27,6 +27,7 @@ import {
   createMovementConductor,
   CONDUCTOR_ENABLED,
   PHASE_TEMPLATE,
+  WEATHER_PERSONALITY,
   smoothstep,
 } from './music/movement.js';
 import { VERSION } from './version.js';
@@ -323,12 +324,18 @@ function buildWorldContext(weather) {
  * cleanly, hand the world's conductor personality to the movement conductor,
  * and refresh the gallery's active highlight.
  */
-function handleWorldChange(recipe) {
+function handleWorldChange(recipe, category) {
   if (recipe.id === activeWorldId) return;
   activeWorldId = recipe.id;
 
-  if (CONDUCTOR_ENABLED && movementConductor && recipe.form?.personality) {
-    movementConductor.setPersonalityOverride(recipe.form.personality);
+  if (CONDUCTOR_ENABLED && movementConductor) {
+    // A world with an explicit personality forces it; the default world (null
+    // personality) restores weather-driven behavior so a prior world's forced
+    // personality (e.g. Tempest's 'dramatic') does not linger after switching back.
+    const personality = recipe.form?.personality
+      || WEATHER_PERSONALITY[category]
+      || 'contemplative';
+    movementConductor.setPersonalityOverride(personality);
   }
 
   if (engine?.setTransitionGainScale) {
@@ -374,7 +381,7 @@ function onWeatherUpdate(weather) {
   });
 
   interpolator.update(musicalParams);
-  handleWorldChange(recipe);
+  handleWorldChange(recipe, worldContext.category);
   display.update(weather, musicalParams, currentTideData, currentAqiData);
 
   // Update conductor weather context for personality selection
