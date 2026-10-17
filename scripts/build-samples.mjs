@@ -9,8 +9,8 @@
  * folders we use are fetched). Requires git + ffmpeg on PATH.
  *
  * Output:
- *   public/samples/<instrument>/<Note>.m4a   (mono AAC, trimmed, peak-normalised)
- *   public/samples/manifest.json             ({ instrument: { tier, notes: { "C4": "C4.m4a" } } })
+ *   public/samples/<instrument>/<Note>.mp3   (mono MP3, trimmed, peak-normalised)
+ *   public/samples/manifest.json             ({ instrument: { tier, notes: { "C4": "C4.mp3" } } })
  *
  * VSCO names most pitched files with the "middle C = C3" convention; the
  * `octaveShift` per instrument converts to scientific pitch (middle C = C4),
@@ -25,7 +25,8 @@ import { fileURLToPath } from 'url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'public', 'samples');
-const BITRATE = '80k';
+const BITRATE = '96k';
+const EXT = 'mp3'; // MP3 is the one format every browser's decodeAudioData accepts
 
 // tier 1 loads first (harmony bed), tier 3 last (colour + events)
 const INSTRUMENTS = {
@@ -122,7 +123,7 @@ function encode(src, dest, { maxSec, fade }, targetPeak = -1.5) {
     `volume=${gain.toFixed(2)}dB`,
   ].join(',');
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', src, '-ac', '1', '-ar', '44100', '-af', filters,
-    '-c:a', 'aac', '-b:a', BITRATE, '-movflags', '+faststart', dest]);
+    '-c:a', 'libmp3lame', '-b:a', BITRATE, dest]);
 }
 
 function build(source) {
@@ -140,8 +141,8 @@ function build(source) {
     if (cfg.unpitched) {
       entry.unpitched = true;
       for (const [key, file] of Object.entries(cfg.unpitched)) {
-        encode(join(srcDir, file), join(dest, `${key}.m4a`), cfg);
-        entry.notes[key] = `${key}.m4a`;
+        encode(join(srcDir, file), join(dest, `${key}.${EXT}`), cfg);
+        entry.notes[key] = `${key}.${EXT}`;
       }
     } else {
       for (const file of readdirSync(srcDir).sort()) {
@@ -158,8 +159,8 @@ function build(source) {
           if (diff > 1 && octaveFold <= 1) warnings.push(`${name}/${file}: named ${note}, detected ${midiToNote(Math.round(detected))} (octave ambiguity)`);
           else if (octaveFold > 1) warnings.push(`${name}/${file}: named ${note}, detected ${hz.toFixed(1)} Hz`);
         }
-        encode(join(srcDir, file), join(dest, `${note.replace('#', 's')}.m4a`), cfg);
-        entry.notes[note] = `${note.replace('#', 's')}.m4a`;
+        encode(join(srcDir, file), join(dest, `${note.replace('#', 's')}.${EXT}`), cfg);
+        entry.notes[note] = `${note.replace('#', 's')}.${EXT}`;
       }
     }
     manifest[name] = entry;

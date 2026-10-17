@@ -196,11 +196,13 @@ export function composeScore(snapshot, ctx = {}) {
   // Winds: wind is breath
   const windNorm = smoothstep(3, 45, w.windSpeed ?? 0);
   const gustiness = clamp(((w.windGusts ?? 0) - (w.windSpeed ?? 0)) / Math.max(8, w.windSpeed ?? 0));
-  sections.winds = entry((w.windSpeed ?? 0) > 2, 0.2 + windNorm * 0.7, smoothstep(15, 55, w.windGusts ?? 0), {
+  // In a thunderstorm the gusts belong to the storm: let the drums lead
+  sections.winds = entry((w.windSpeed ?? 0) > 2, 0.2 + windNorm * 0.7, smoothstep(15, 55, w.windGusts ?? 0) * (category === 'storm' ? 0.7 : 1), {
     speed: windNorm,
     gustiness,
     pan: azimuthToPan(w.windDirection ?? 0),
     chimes: (w.windSpeed ?? 0) > 5,
+    chimeDecay: lerp(0.75, 1.4, hum), // dry air rings crisp, humid air lingers
   });
   why('Wind', `${Math.round(w.windSpeed ?? 0)} km/h, gusts ${Math.round(w.windGusts ?? 0)}`, 'flutes & clarinets breathe; chimes stir', 'Wind is breath — woodwinds swell on every gust, from the side it blows.', 'winds');
 
@@ -229,7 +231,7 @@ export function composeScore(snapshot, ctx = {}) {
   // Storm: the drums of convection
   const capeEnergy = smoothstep(400, 2500, w.cape ?? 0);
   const storming = category === 'storm';
-  sections.storm = entry(storming || (capeEnergy > 0.5 && precip > 0.5), storming ? 0.6 + capeEnergy * 0.4 : capeEnergy * 0.4, storming ? 0.95 : capeEnergy * 0.4, {
+  sections.storm = entry(storming || (capeEnergy > 0.5 && precip > 0.5), storming ? 0.6 + capeEnergy * 0.4 : capeEnergy * 0.4, storming ? 1 : capeEnergy * 0.4, {
     energy: storming ? Math.max(0.6, capeEnergy) : capeEnergy * 0.5,
     thunderPerMinute: storming ? 0.6 + capeEnergy * 2 : 0,
   });
@@ -313,7 +315,7 @@ export function composeScore(snapshot, ctx = {}) {
 
   // Bells: the hour
   const holiday = calendar.holiday;
-  sections.bells = entry(true, clamp(0.35 + density * 0.45), holiday ? 0.6 : 0.3, {
+  sections.bells = entry(true, clamp(0.35 + density * 0.45), holiday ? 0.5 : 0.1, { // strikes take the spotlight; otherwise a bed
     quarters: density > 0.35,
     peal: Boolean(holiday),
     hour: calendar.hour,

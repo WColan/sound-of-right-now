@@ -30,7 +30,7 @@
         <span class="overlay-title-line">Sound of Now:</span>
         <span class="overlay-title-line">Atmospheric Renderings</span>
       </h1>
-      <p class="overlay-tagline">Generative ambient music for the here and now.</p>
+      <p class="overlay-tagline">A living orchestra for this place, this moment.</p>
       <button id="listen-btn" class="listen-btn">Listen</button>
       <p id="overlay-version" class="overlay-version"></p>
     </div>
@@ -42,6 +42,7 @@
       <span class="info-time" id="info-time"></span>
     </div>
     <div class="info-details" id="info-details"></div>
+    <div class="now-caption" id="now-caption" aria-live="polite"></div>
   </div>
 
   <div id="chord-display" class="chord-display hidden">
@@ -49,17 +50,7 @@
     <div class="chord-timeline" id="chord-timeline"></div>
   </div>
 
-  <div id="mute-panel" class="mute-panel hidden">
-    <button class="mute-btn" data-voice="pad">pad</button>
-    <button class="mute-btn" data-voice="arpeggio">arp</button>
-    <button class="mute-btn" data-voice="bass">bass</button>
-    <button class="mute-btn" data-voice="melody">mel</button>
-    <button class="mute-btn" data-voice="texture">tex</button>
-    <button class="mute-btn" data-voice="percussion">perc</button>
-    <button class="mute-btn" data-voice="drone">drone</button>
-    <button class="mute-btn" data-voice="windChime">chimes</button>
-    <button class="mute-btn" data-voice="choir">choir</button>
-  </div>
+  <div id="mute-panel" class="mute-panel hidden" aria-label="Mix: mute sections"></div>
 
   <div id="controls" class="controls hidden">
     <button id="pause-btn" class="control-btn" aria-label="pause">
@@ -78,8 +69,8 @@
   <div id="secondary-menu" class="secondary-menu hidden" role="menu" aria-label="Actions">
     <button id="location-btn" class="control-btn menu-item" role="menuitem">change location</button>
     <button id="mix-btn" class="control-btn menu-item" role="menuitem" aria-label="Mix">mix</button>
-    <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Weather details">weather</button>
-    <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="Audio details">audio</button>
+    <button id="weather-btn" class="control-btn menu-item" role="menuitem" aria-label="Everything we are listening to right now">now</button>
+    <button id="audio-btn" class="control-btn menu-item" role="menuitem" aria-label="What you are hearing and why">legend</button>
     <button id="conductor-btn" class="control-btn menu-item" role="menuitem" aria-label="Conductor">conductor</button>
     <button id="sleep-btn" class="control-btn menu-item" role="menuitem" aria-label="Sleep timer">sleep</button>
     <button id="share-btn" class="control-btn menu-item" role="menuitem" aria-label="Share link">

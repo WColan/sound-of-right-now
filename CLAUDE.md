@@ -25,22 +25,22 @@ Do this as part of the commit before deploying, not as an afterthought.
 
 ## Tech Stack
 
-- Vanilla JS (ES modules), Vite v7, Tone.js v15, Canvas 2D, Vitest
+- Vanilla JS (ES modules), Vite v7, Tone.js v15, WebGL2 (Canvas 2D fallback), astronomy-engine, Vitest
 - Deployed to Vercel
 
 ## Key Paths
 
 - Version: `src/version.js`
-- Entry: `src/main.js`
-- Music engine: `src/music/engine.js`
-- Weather → Music mapping (pure fn): `src/music/mapper.js`
-- Parameter interpolation: `src/music/interpolator.js`
+- Entry / wiring: `src/main.js`
+- Data layer: `src/now/` (`feed.js` polling, `snapshot.js` pure merge, `sky.js` astronomy, `calendar.js`, `sources/*`)
+- Snapshot → music mapping (pure fn): `src/music/score.js`
+- Attention budget (pure fn): `src/music/stage.js`
+- Orchestra graph: `src/music/orchestra/engine.js`; sections in `src/music/orchestra/sections/`; shared helpers in `toolkit.js`; sample loading in `samples.js`
 - Chord/harmony progression: `src/music/progression.js`
 - Long-form expression arcs: `src/music/movement.js`
-- Scale/note utilities: `src/music/scale.js`
+- Visuals: `src/visual/` (`renderer.js` WebGL2, `shaders.js`, `mood.js` pure)
 - UI: `src/ui/`
-- Weather fetching: `src/weather/fetcher.js`
-- Voices: `src/music/voices/` (pad, arpeggio, bass, drone, melody, texture, percussion, windchime, choir)
+- Samples: `public/samples/` (rebuild with `node scripts/build-samples.mjs`)
 
 ## Dev Commands
 
@@ -54,58 +54,52 @@ npm run test:watch   # Continuous test watch
 ## Architecture: Data Flow
 
 ```
-[Weather APIs] → fetcher.js → mapper.js → interpolator.js → engine.js → Audio
-                                                                ↓
-                                                     visualizer.js / display.js
+[Free APIs + local astronomy] → now/feed.js → NowSnapshot → score.js → stage.js → orchestra/engine.js → Audio
+                                                                   ↘ visual/mood.js → visual/renderer.js
 ```
 
-- `mapper.js` is a **pure function** — no side effects, easy to unit test without Tone.js
-- `interpolator.js` distinguishes **continuous params** (ramp smoothly) vs **discrete params** (snap at musical boundaries like key changes)
-- `engine.js` owns the full Tone.js audio graph; all 9 voices connect here
+- `score.js`, `stage.js`, `mood.js`, `snapshot.js` and every `sources/*` normalizer are **pure** — test without Tone.js or network
+- Sections ramp their own continuous params; key/mode/category changes go through the progression player (queued to cycle ends unless dramatic)
+- Sections sit in registral zones (`ZONES` in score.js) — at most one featured section per zone, max 3 featured
 
-## Adding a New Voice
+## The One Rule
 
-1. Create `src/music/voices/yourvoice.js` — export `createYourVoice()` returning the voice interface (see below)
-2. Instantiate in `engine.js` and wire into the audio graph (gain → effects → master bus)
-3. Add volume/param handling in `engine.js` `updateParams()`
-4. Add relevant output params to `mapper.js` (the weather → music mapping)
-5. Add those params to `interpolator.js` `CONTINUOUS_PARAMS` or `DISCRETE_PARAMS`
-6. Update README.md voices table
+Every data source maps to a sound with an **intuitive, explainable reason** ("wind is breath → woodwinds"). Every mapping must add a `why()` legend line in `score.js` that a listener would nod at. If you can't write the why, don't add the mapping.
 
-### Voice Interface Contract
+## Adding a New Section
 
-Every voice must implement:
+1. `node scripts/scaffold-section.js yoursection` → `src/music/orchestra/sections/yoursection.js`
+2. Add the source (if new) under `src/now/sources/` with a pure `normalize*` + fixture tests; wire it into `feed.js` / `snapshot.js`
+3. Map it in `score.js` (level, salience, params, legend `why`) and add the id to a zone in `ZONES`
+4. Register the factory in `FACTORIES` in `orchestra/engine.js`; add a label in `src/ui/now-panels.js`
+5. Tests in `score.test.js` and `orchestra.test.js`; update README sections table
+
+### Section Contract
+
+Every section must implement:
 ```js
 {
-  output: Tone.Gain,           // Connect this to the audio graph
-  play(note, duration, vel),   // Play a single note
-  playChord(notes, duration),  // Play multiple notes
-  stop(),                      // Stop all sound immediately
-  pause(),                     // Pause (preserve state)
-  resume(),                    // Resume from paused state
-  dispose(),                   // Tear down all Tone.js nodes
+  id, output: Tone.Gain, base,          // base = createSectionBase(): level/role/mute
+  update(params, { role, gainDb }, ramp),
+  onChord(chord, { first }),
+  play(note, duration, vel), playChord(notes, duration),
+  start(), stop(), pause(), resume(), dispose(),
+  motif?(time), setHarmony?({ root, mode }), setMuted?(bool)
 }
 ```
-Some voices also expose `rainOutput` (texture voice) for parallel routing.
+Use `createVoice()` (sample + synth fallback) — never share a Tone.Sampler between voices.
 
 ## Testing Conventions
 
 - Tests are **colocated** with source files as `*.test.js`
 - Framework: Vitest (`describe`, `it`, `beforeEach`, `expect`)
-- Tone.js synthesizers and `Tone.Loop` must be mocked — see existing tests for patterns
-- Pure functions (mapper, scale, movement) need no Tone.js mocking
+- Orchestra tests mock Tone with `src/test/fake-tone.js` (`vi.mock('tone', async () => (await import('../../test/fake-tone.js')).createFakeToneModule())`); `Tone.__advance(seconds)` runs Transport-scheduled events
+- Snapshot fixtures: `src/test/now-fixtures.js` (`makeSnapshot({...})`)
 - DOM tests use `src/test/fake-dom.js` helpers
-
-## Parameter Types (Interpolator)
-
-When adding mapper output params, classify them in `interpolator.js`:
-- **Continuous** — volumes, filter cutoffs, reverb decay, LFO rates → ramp smoothly (3–30s)
-- **Discrete** — root note, scale mode, arpeggio pattern, category — snap only at musical phrase boundaries
-- **Metadata** — display strings (location, weather description) — ignored by interpolator
 
 ## External APIs (All Free, No Keys Required)
 
-- **Weather + Air Quality:** Open-Meteo (`open-meteo.com`)
-- **Geocoding / Reverse Geocoding:** Open-Meteo Geocoding API
-- **Tides:** NOAA Tidal Predictions (`api.tidesandcurrents.noaa.gov`)
-- **Moon phase / Season / Biome:** Local calculations or Open-Meteo land-cover
+- Open-Meteo: forecast, marine, flood (GloFAS), air quality, geocoding
+- NOAA: CO-OPS tides, SWPC space weather
+- USGS earthquake feed · wheretheiss.at · iNaturalist · Nager.Date holidays · BigDataCloud reverse geocode · Overpass (biome)
+- Local: astronomy-engine (sun/moon/planets), calendar (meteor showers, activity curve)

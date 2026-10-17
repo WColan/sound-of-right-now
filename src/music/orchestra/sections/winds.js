@@ -100,9 +100,9 @@ export function createWindsSection(ctx) {
       rampParam(airFilter.frequency, 0.05 + (next.speed ?? 0) * 0.35, ramp);
       if (next.on && air.state !== 'started') air.start();
       chimes.setWindSpeed(lerp(0, 50, next.speed ?? 0));
+      if (next.chimeDecay) chimes.setDecayMod(next.chimeDecay);
       chimes.setActive(Boolean(next.on && next.chimes));
     },
-    setHumidity(decayMod) { chimes.setDecayMod(decayMod); },
     onChord(chord) {
       scaleTones = chord.scaleTones ?? chord.notes;
       chordTones = chord.chordTones ?? chord.notes;

@@ -161,5 +161,6 @@ describe('composeScore', () => {
     const b = composeScore(snap, { rng: () => 0.1, previousMode: a.harmony.mode });
     expect(a.harmony.mode).toBe(b.harmony.mode);
     expect(a.sections.storm.on).toBe(true);
+    expect(a.sections.storm.salience).toBeGreaterThan(a.sections.winds.salience);
   });
 });
