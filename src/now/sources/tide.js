@@ -44,6 +44,8 @@ export function nearestStation(stations, lat, lng, maxKm = 80) {
 export async function loadTide({ lat, lng, station, now = Date.now(), fetchImpl }) {
   if (!station && !stationCache) {
     stationCache = (await fetchJson(TIDE_STATIONS_URL, { fetchImpl }))?.stations ?? null;
+    // Station list unreachable: unknown, not "inland" — the caller retries
+    if (!stationCache) return { station: null, tide: null, failed: true };
   }
   const st = station ?? nearestStation(stationCache, lat, lng);
   if (!st) return { station: null, tide: null };

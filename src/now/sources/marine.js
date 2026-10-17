@@ -31,6 +31,8 @@ export function normalizeMarine(data) {
   };
 }
 
+/** Resolves to undefined when the request failed (retry later), null when there's no sea here. */
 export async function loadMarine({ lat, lng, fetchImpl }) {
-  return normalizeMarine(await fetchJson(buildMarineUrl(lat, lng), { fetchImpl }));
+  const raw = await fetchJson(buildMarineUrl(lat, lng), { fetchImpl });
+  return raw == null ? undefined : normalizeMarine(raw);
 }

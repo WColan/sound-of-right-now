@@ -302,7 +302,7 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   const overlay = document.getElementById('overlay');
   const infoDisplay = document.getElementById('info-display');
   const controls = document.getElementById('controls');
-  const canvas = document.getElementById('visualizer');
+  let canvas = document.getElementById('visualizer');
 
   if (CONDUCTOR_ENABLED) movementConductor = createMovementConductor();
   display = createDisplay();
@@ -500,6 +500,10 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
   const waveProxy = { getValue: () => orchestra?.waveformAnalyser.getValue() ?? null };
   visual = createNowVisualizer(canvas, { analyser: fftProxy, skyData, isMobile });
   if (!visual.supported) {
+    // A canvas can't switch context types once WebGL2 has claimed it
+    const fresh = canvas.cloneNode(false);
+    canvas.replaceWith(fresh);
+    canvas = fresh;
     legacyVisual = true;
     visual = createVisualizer(canvas, fftProxy, waveProxy);
     visual.onLightning(() => orchestra?.triggerThunder());

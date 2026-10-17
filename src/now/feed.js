@@ -20,6 +20,7 @@ import { classifyBiome } from '../weather/biome.js';
 
 const MIN = 60000;
 const CLOCK_TICK_MS = 20000;
+const RETRY_MS = 2 * MIN;
 
 export function createNowFeed({ lat, lng, name = null, fetchImpl, now = () => Date.now(), classify = classifyBiome } = {}) {
   const state = { lat, lng, name, weather: null, air: null, marine: null, tide: null, river: null,
@@ -100,18 +101,23 @@ export function createNowFeed({ lat, lng, name = null, fetchImpl, now = () => Da
       }
     });
     every(15 * MIN, async (gen) => { set('air', await loadAir(ctx()), gen); });
+    // undefined = the request failed (keep the last value, retry sooner);
+    // null = the source doesn't apply here (inland, no river) → stop asking.
     every(15 * MIN, async (gen) => {
       const m = await loadMarine(ctx());
+      if (m === undefined) return RETRY_MS;
       set('marine', m, gen);
-      return m ? undefined : false; // inland: never ask again for this location
+      return m ? undefined : false;
     });
     every(180 * MIN, async (gen) => {
       const r = await loadRiver(ctx());
+      if (r === undefined) return RETRY_MS;
       set('river', r, gen);
       return r ? undefined : false;
     });
     every(10 * MIN, async (gen) => {
-      const { station, tide } = await loadTide({ ...ctx(), station: tideStation });
+      const { station, tide, failed } = await loadTide({ ...ctx(), station: tideStation });
+      if (failed) return RETRY_MS;
       tideStation = station;
       set('tide', tide, gen);
       return station ? undefined : false;

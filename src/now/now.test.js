@@ -146,6 +146,29 @@ describe('feed', () => {
     feed.stop();
   });
 
+  it('retries the sea after a failed request instead of treating it as inland', async () => {
+    vi.useFakeTimers();
+    let marineCalls = 0;
+    const fetchImpl = vi.fn(async (url) => {
+      const json = (body) => ({ ok: true, json: async () => body });
+      if (url.includes('marine-api')) {
+        marineCalls++;
+        if (marineCalls === 1) throw new Error('network down');
+        return json({ current: { wave_height: 1.5, wave_period: 10 } });
+      }
+      if (url.includes('api.open-meteo.com')) return json({ current: { temperature_2m: 10, relative_humidity_2m: 50, surface_pressure: 1012, weather_code: 0 } });
+      return { ok: false, json: async () => null };
+    });
+    const feed = createNowFeed({ lat: 42, lng: -70, fetchImpl, classify: async () => 'coastal' });
+    feed.start();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(feed.state.marine).toBeNull();
+    await vi.advanceTimersByTimeAsync(2 * 60000 + 1000);
+    expect(marineCalls).toBe(2);
+    expect(feed.state.marine.waveHeight).toBe(1.5);
+    feed.stop();
+  });
+
   it('drops responses that arrive after stop()', async () => {
     vi.useFakeTimers();
     let resolveWeather;

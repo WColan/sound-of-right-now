@@ -33,6 +33,8 @@ export function normalizeRiver(data) {
   };
 }
 
+/** Resolves to undefined when the request failed (retry later), null when there's no river here. */
 export async function loadRiver({ lat, lng, fetchImpl }) {
-  return normalizeRiver(await fetchJson(buildRiverUrl(lat, lng), { fetchImpl }));
+  const raw = await fetchJson(buildRiverUrl(lat, lng), { fetchImpl });
+  return raw == null ? undefined : normalizeRiver(raw);
 }
