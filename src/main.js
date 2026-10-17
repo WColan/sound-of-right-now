@@ -65,6 +65,8 @@ let stageState = createStageState();
 let spotlight = null;
 let lastPhaseName = null;
 let castAppliedTo = null;
+let orchestraStarted = false;
+let startFallbackTimer = null;
 const featuredThisMovement = new Set();
 
 const listenMinutes = () => (Date.now() - listenStartedAt) / 60000;
@@ -76,8 +78,16 @@ function getStillnessDepth() {
   return smoothstep(Math.max(0, Math.min(1, (phase.progress - PHASE_TEMPLATE.stillness.start) / span)));
 }
 
+/** Before the orchestra starts, the sky can already be drawn. */
+function renderVisualOnly(snapshot, score) {
+  const mood = computeMood(snapshot, score, { listenMinutes: listenMinutes() });
+  if (visual?.supported) visual.setMood(mood, { activity: snapshot.calendar.activity });
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(cssAccent(mood))) root.style.setProperty(k, v);
+}
+
 // ── The heart: snapshot → score → stage → orchestra + light ──
-function render(snapshot, { ramp = 8 } = {}) {
+function render(snapshot, { ramp = 8, force = false } = {}) {
   if (!orchestra || !snapshot) return;
   // The first real data replaces the placeholder: don't let placeholder features hold the stage
   if (snapshot.weather && !lastSnapshot?.weather) stageState = createStageState();
@@ -92,7 +102,16 @@ function render(snapshot, { ramp = 8 } = {}) {
     orchestra.sections.life.setCast(snapshot.life.topBirds);
     castAppliedTo = orchestra;
   }
-  orchestra.update(score, stage, ramp);
+  // The orchestra waits for the real weather, so every place opens as itself
+  // (not with a generic placeholder chord). A fallback timer covers outages.
+  if (!orchestraStarted) {
+    if (!snapshot.weather && !force) return renderVisualOnly(snapshot, score);
+    clearTimeout(startFallbackTimer);
+    orchestra.start(score, stage);
+    orchestraStarted = true;
+  } else {
+    orchestra.update(score, stage, ramp);
+  }
 
   const expr = movementConductor?.getExpression?.() ?? {};
   const mood = computeMood(snapshot, score, { stillness: getStillnessDepth(), tension: expr.harmonicTension ?? 0, listenMinutes: listenMinutes() });
@@ -231,14 +250,18 @@ function createOrchestraForLocation(lat, lng, { fadeIn }) {
   orchestra.sections.life.setCast([], `${lat.toFixed(1)},${lng.toFixed(1)}`);
   stageState = createStageState();
   spotlight = null;
-  const placeholder = buildSnapshot({ lat, lng }, Date.now());
-  const score = composeScore(placeholder, { listenMinutes: listenMinutes() });
-  const stage = arrangeStage(score, stageState, Date.now());
-  orchestra.start(score, stage);
+  orchestraStarted = false;
   orchestra.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
   if (fadeIn) orchestra.setUserGainScale(userVolumeScale, 4);
   orchestra.setSleepGainScale(1, 0);
+  // Draw the true sky right away; start the music when the weather answers,
+  // or after a few seconds with what we can compute locally.
+  const placeholder = buildSnapshot({ lat, lng }, Date.now());
   render(placeholder, { ramp: 1 });
+  clearTimeout(startFallbackTimer);
+  startFallbackTimer = setTimeout(() => {
+    if (!orchestraStarted && orchestra) render(lastSnapshot ?? placeholder, { ramp: 1, force: true });
+  }, 6000);
 }
 
 function setPauseButtonState(playing) {

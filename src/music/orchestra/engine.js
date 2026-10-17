@@ -61,6 +61,26 @@ const ZONE_EQ = {
 // During the conductor's stillness phase these sections fall back least
 const BED_SECTIONS = new Set(['strings', 'basses', 'ocean', 'spheres']);
 
+/**
+ * Arrival order: strings first (fading up from nothing), then the featured
+ * sections of this moment, then everything else that's on, by salience.
+ * Returns [{ id, at (s), fade (s) }].
+ */
+export function entrancePlan(score, stage) {
+  const on = SECTION_IDS.filter((id) => score.sections[id]?.on);
+  const featured = (stage?.foreground ?? []).filter((id) => on.includes(id) && id !== 'strings');
+  const rest = on
+    .filter((id) => id !== 'strings' && !featured.includes(id))
+    .sort((a, b) => score.sections[b].salience - score.sections[a].salience);
+  const plan = [{ id: 'strings', at: 0.2, fade: 9 }];
+  featured.forEach((id, i) => plan.push({ id, at: 2.5 + i * 4.5, fade: 5 }));
+  const t0 = 2.5 + featured.length * 4.5 + 2;
+  rest.forEach((id, i) => plan.push({ id, at: t0 + i * 3, fade: 7 }));
+  // Silent sections still need their gate opened for when they turn on later
+  SECTION_IDS.filter((id) => !on.includes(id)).forEach((id) => plan.push({ id, at: t0, fade: 1 }));
+  return plan;
+}
+
 export function createOrchestra({ Tone = RealTone, library, rng = Math.random, loadSamples = true } = {}) {
   const listeners = new Set();
   const expr = { swell: 0, tension: 0, energy: 0.3, urgency: 0.3, effect: 0.3, stillness: 0 };
@@ -231,9 +251,21 @@ export function createOrchestra({ Tone = RealTone, library, rng = Math.random, l
     effects: { reverb, echo, masterFilter, masterGain, limiter, zones, hallSend },
     ctx,
 
-    /** Start with a first score. */
-    start(score, stage) {
+    /**
+     * Start with a first score. With `entrance`, the place introduces itself:
+     * the strings fade up from silence, then sections enter one by one, the
+     * most characteristic of this moment first (see entranceOrder).
+     */
+    start(score, stage, { entrance = true } = {}) {
       started = false;
+      if (entrance) {
+        const plan = entrancePlan(score, stage);
+        for (const id of SECTION_IDS) sections[id].base.setEntryDb(-60, 0);
+        const transport = Tone.getTransport();
+        for (const { id, at, fade } of plan) {
+          transport.scheduleOnce(() => sections[id]?.base.setEntryDb(0, fade), transport.seconds + at);
+        }
+      }
       applyHarmony(score.harmony);
       this.update(score, stage, 0.5);
       atmosphere.start();

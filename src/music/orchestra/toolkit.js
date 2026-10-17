@@ -260,11 +260,11 @@ export function createPeriodic(ctx, { interval, fire }) {
 export function createSectionBase(ctx, id, { trimDb = 0, levelRamp = 6 } = {}) {
   const { Tone } = ctx;
   const output = new Tone.Gain(0);
-  const state = { on: false, level: 0, roleDb: 0, muted: false, extraDb: 0 };
+  const state = { on: false, level: 0, roleDb: 0, muted: false, extraDb: 0, entryDb: 0 };
 
   function targetDb() {
     if (!state.on || state.muted) return SILENT_DB;
-    return levelToDb(state.level) + state.roleDb + trimDb + state.extraDb;
+    return levelToDb(state.level) + state.roleDb + trimDb + state.extraDb + state.entryDb;
   }
 
   return {
@@ -286,6 +286,11 @@ export function createSectionBase(ctx, id, { trimDb = 0, levelRamp = 6 } = {}) {
     },
     setExtraDb(db, ramp) {
       state.extraDb = db;
+      this.apply(ramp);
+    },
+    /** Arrival gain: held down until the section's entrance, then faded in. */
+    setEntryDb(db, ramp) {
+      state.entryDb = db;
       this.apply(ramp);
     },
     get audible() {

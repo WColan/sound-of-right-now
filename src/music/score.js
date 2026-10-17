@@ -73,6 +73,37 @@ export function chorusCurve(sunAltitude, rising) {
 
 const SEASON_BIRDS = { spring: 1, summer: 0.75, autumn: 0.4, winter: 0.2 };
 
+/**
+ * The sky decides how the strings play — the same instruments, a different gesture.
+ * level/violins/brightness are multipliers on the light-driven baseline.
+ */
+export const STRING_TEXTURE = {
+  clear:   { articulation: 'legato', level: 1, violins: 1, brightness: 1, effect: 'long, open bows',
+    why: 'A clear sky is one unbroken line — the strings hold long, singing bows.' },
+  cloudy:  { articulation: 'muted', level: 0.9, violins: 0.6, brightness: 0.65, effect: 'muted strings, violas lead',
+    why: 'Overcast dims the light; the strings play as if muted, the bright violins step back.' },
+  fog:     { articulation: 'veil', level: 0.75, violins: 0.8, brightness: 0.5, effect: 'faint, high, slow tones',
+    why: 'Fog hides everything but a glow — the strings thin to faint, high, slow tones.' },
+  drizzle: { articulation: 'pizz', level: 0.85, violins: 0.8, brightness: 0.8, effect: 'sparse pizzicato under a soft bow',
+    why: 'Drizzle breaks the line into drops — the bed starts to pluck.' },
+  rain:    { articulation: 'pizz', level: 0.9, violins: 0.85, brightness: 0.75, effect: 'pizzicato bed',
+    why: 'Rain breaks the line into drops — the strings pluck instead of bow.' },
+  snow:    { articulation: 'sparse', level: 0.7, violins: 1, brightness: 0.9, effect: 'few, high, hushed notes',
+    why: 'Snow quiets the world — only a few high, hushed notes remain.' },
+  storm:   { articulation: 'tremolo', level: 1, violins: 1, brightness: 0.85, effect: 'shuddering tremolo',
+    why: 'In a storm the air itself shakes — the strings play tremolo.' },
+};
+
+/** 1 = bare open fifths (thin, cold, dry air) … 0 = thick extended chords (warm, humid air). */
+export function stringOpenness(tempC, humidity01) {
+  const heavy = smoothstep(-5, 30, tempC) * 0.5 + humidity01 * 0.5;
+  return clamp(1 - heavy * 1.25 + 0.15);
+}
+
+function describeSky(category) {
+  return { clear: 'clear', cloudy: 'overcast', fog: 'fog', drizzle: 'drizzle', rain: 'rain', snow: 'snow', storm: 'thunderstorm' }[category] ?? category;
+}
+
 const BIOME_HALL = {
   forest:    { decayMul: 1.25, wetMul: 1.15, echo: null, early: 0.1, label: 'forest canopy diffuses sound' },
   mountain:  { decayMul: 1.1, wetMul: 1.0, echo: { time: 0.48, feedback: 0.38 }, early: 0.05, label: 'valley walls return echoes' },
@@ -153,11 +184,19 @@ export function composeScore(snapshot, ctx = {}) {
   const sections = {};
 
   // Strings: the harmonic bed, always present. Violins rise with the sun.
-  sections.strings = entry(true, lerp(0.55, 0.75, 1 - light * 0.3), 0.15, {
-    violins: clamp(0.25 + light * 0.75),
-    brightness: light,
+  // The sky decides *how* they play; the air decides how thick the chords are.
+  const texture = STRING_TEXTURE[category] ?? STRING_TEXTURE.clear;
+  const openness = stringOpenness(w.temperature, hum);
+  sections.strings = entry(true, lerp(0.55, 0.75, 1 - light * 0.3) * texture.level, 0.15, {
+    violins: clamp((0.25 + light * 0.75) * texture.violins),
+    brightness: clamp(light * texture.brightness),
     vibrato: smoothstep(-10, 30, w.temperature),
+    articulation: texture.articulation,
+    openness,
   });
+  why('Sky', describeSky(category), texture.effect, texture.why, 'strings');
+  why('Air', `${fmtTemp(w.temperature)}, ${Math.round(hum * 100)}% humidity`, openness > 0.6 ? 'open, bare fifths' : openness < 0.3 ? 'thick, extended chords' : 'plain triads and sevenths',
+    'Thin, dry, cold air rings bare and open; warm, heavy, humid air fills every chord.', 'strings');
 
   // Basses: the weight of the air
   const falling = clamp(-(w.pressureTendency ?? 0) / 4);
@@ -287,16 +326,25 @@ export function composeScore(snapshot, ctx = {}) {
   const life = snapshot.life;
   const richness = life ? clamp(Math.log1p(life.birdSpecies) / Math.log(80)) : 0.5;
   const weatherHush = 1 - smoothstep(0.5, 4, precip) * 0.8 - smoothstep(25, 55, w.windSpeed ?? 0) * 0.6;
-  const birds = clamp(chorusCurve(sunAlt, sky.sun.rising) * (SEASON_BIRDS[calendar.season] ?? 0.5) * lerp(0.5, 1.2, richness) * weatherHush);
+  // The tropics have no winter: life sings all year
+  const tropical = Math.abs(snapshot.location.lat) < 23.5;
+  const birdSeason = tropical ? 0.95 : (SEASON_BIRDS[calendar.season] ?? 0.5);
+  const birds = clamp(chorusCurve(sunAlt, sky.sun.rising) * birdSeason * lerp(0.5, 1.2, richness) * weatherHush);
   const chirpRate = dolbearChirpsPerMinute(w.temperature);
-  const cricketSeason = calendar.season === 'summer' ? 1 : calendar.season === 'autumn' ? 0.8 : calendar.season === 'spring' ? 0.3 : 0;
+  const cricketSeason = tropical ? 1 : calendar.season === 'summer' ? 1 : calendar.season === 'autumn' ? 0.8 : calendar.season === 'spring' ? 0.3 : 0;
   const crickets = clamp(smoothstep(12, 18, w.temperature) * smoothstep(0.2, 0.7, dark) * cricketSeason
     * (life ? lerp(0.6, 1.2, smoothstep(0, 4, life.singingInsects)) : 0.8) * weatherHush);
   const frogs = clamp(smoothstep(65, 90, w.humidity ?? 0) * smoothstep(8, 16, w.temperature) * smoothstep(0.3, 0.8, dark)
-    * (calendar.season === 'spring' ? 1 : calendar.season === 'summer' ? 0.7 : 0.1)
+    * (tropical ? 1 : calendar.season === 'spring' ? 1 : calendar.season === 'summer' ? 0.7 : 0.1)
     * (life ? (life.amphibianSpecies > 0 ? 1 : 0.3) : ['wetland', 'forest', 'tropical'].includes(biome) ? 0.8 : 0.3));
-  sections.life = entry(birds + crickets + frogs > 0.04, clamp(Math.max(birds, crickets, frogs)), clamp(birds * 0.9 + crickets * 0.4),
-    { birds, crickets, frogs, chirpRate, topBirds: life?.topBirds ?? [] });
+  // Cicadas: heat you can hear — they sing on hot, bright days
+  const cicadas = clamp(smoothstep(23, 31, w.temperature) * smoothstep(0, 15, sunAlt)
+    * (tropical ? 1 : calendar.season === 'summer' ? 0.9 : calendar.season === 'autumn' ? 0.3 : 0) * weatherHush);
+  sections.life = entry(birds + crickets + frogs + cicadas > 0.04, clamp(Math.max(birds, crickets, frogs, cicadas)),
+    clamp(birds * 0.9 + crickets * 0.4 + cicadas * 0.6 + (tropical ? 0.15 : 0)),
+    { birds, crickets, frogs, cicadas, chirpRate, topBirds: life?.topBirds ?? [] });
+  if (cicadas > 0.05) why('Cicadas', `${fmtTemp(w.temperature)}, sun ${sunAlt.toFixed(0)}° up`, 'a shimmering high buzz that swells and fades',
+    'Heat you can hear: cicadas only sing when the day is hot.', 'life');
   if (birds > 0.05) why('Birds', life?.topBirds?.length ? life.topBirds.slice(0, 3).join(', ') : `${calendar.season} ${sky.sun.rising ? 'dawn' : 'evening'}`,
     'piccolo-voiced bird calls', 'The dawn chorus — as rich as the species actually seen near you this month.', 'life');
   if (crickets > 0.05) why('Crickets', `${fmtTemp(w.temperature)} → ${Math.round(chirpRate)} chirps/min`, 'cricket pulse', 'Dolbear\'s law: crickets chirp faster in warmer air. Count them and you know the temperature.', 'life');

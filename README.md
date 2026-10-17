@@ -35,7 +35,7 @@ The one rule: **every data source has an instrument, and there's an intuitive re
 
 | Section | Instruments | Listens to | Why it fits |
 |---|---|---|---|
-| **Strings** | violins, violas, celli (sampled) | temperature, sunlight | The harmonic bed is the air itself. Warm air gets sharper keys and brighter modes, and violins rise with the sun. |
+| **Strings** | violins, violas, celli (+ tremolo, pizzicato) | temperature, humidity, sky, sunlight | The harmonic bed is the air itself. Warm air gets sharper keys and brighter modes, and violins rise with the sun. The **sky sets how they play**: clear → long bows, overcast → muted, rain → pizzicato, storm → tremolo, fog → faint high tones, snow → a few hushed notes. The **air sets the chords**: thin, cold, dry air → bare open fifths; warm, humid air → thick chords with added ninths. |
 | **Basses** | contrabass + sub sine | pressure & 3-h tendency | The weight of the air is the weight of the low end. A falling barometer makes the basses uneasy. |
 | **Ocean** | celli & basses swells + surf wash | wave height/period/direction, SST, tide | Swells breathe on the real wave period and arrive from the real direction. A rising tide lifts the line. |
 | **River** | low pizzicato & harp running figure | GloFAS discharge vs. median | Running water runs, and the figure quickens when the river is in flood. |
@@ -49,12 +49,16 @@ The one rule: **every data source has an instrument, and there's an intuitive re
 | **Aurora** | high violin tremolo + shimmer | NOAA Kp, solar wind, geomagnetic latitude | When the magnetic field trembles the sky shimmers, and the strings shimmer with it. |
 | **Meteors** | crotale/glock sparks, bell tree | active shower ZHR, darkness, cloud | Each shooting star is one spark of metal, and it streaks across the visualizer at the same instant. |
 | **ISS** | a gliding FM tone | ISS position, range, radial velocity | Something is passing overhead at 7.7 km/s. Its pitch bends with its true Doppler shift and pans with its azimuth. |
-| **Life** | synthesized birds, crickets, frogs | sun, season, temperature, humidity, iNaturalist species | Dawn chorus with a local bird "cast" seeded from species seen nearby. Crickets chirp at the Dolbear rate. |
+| **Life** | synthesized birds, crickets, frogs, cicadas | sun, season, latitude, temperature, humidity, iNaturalist species | Dawn chorus with a local bird "cast" seeded from species seen nearby. Crickets chirp at the Dolbear rate. Cicadas buzz on hot, bright days ("heat you can hear"). The tropics have no winter, so life sings all year there. |
 | **People** | muted pizzicato & marimba pulse | population, local hour, weekday/holiday | A town has a heartbeat: busiest at rush hour, nearly still at 4 am. |
 | **Bells** | FM tubular bells + piano | local clock, population, public holidays | Towns ring the hour. Westminster quarters play in the current key, and a full peal rings on public holidays. |
 | **Earth** | timpani, gong, sub thump | USGS quakes, regional restlessness | The ground speaks in drums. Bigger quakes sound lower, and the sound arrives after the waves' travel time. |
 
 Samples come from **VSCO 2: Community Edition** (CC0), stored as about 13 MB of mono MP3 and loaded in tiers (strings first) after the first sound. Until they arrive, every section plays a synth fallback, so audio starts instantly and the orchestra fills in.
+
+### Arrival
+
+Every place introduces itself. The orchestra waits for the real weather (up to 6 s) instead of opening on a generic chord. The strings fade up from silence. Then the sections featured *here and now* enter one by one, followed by everything else in order of salience: sea swells and a horn call on a Boston dawn, cicadas on a Libreville afternoon, aurora shimmer on a Fairbanks night. Chord changes bloom from cellos up to violins instead of being struck all at once.
 
 ### Harmony
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  STRING_TEXTURE, stringOpenness,
   composeScore, temperatureToRoot, temperatureToMode, temperatureToBpm, dolbearChirpsPerMinute,
   keplerSemitones, chorusCurve, SECTION_IDS, ZONE_OF,
 } from './score.js';
@@ -162,5 +163,40 @@ describe('composeScore', () => {
     expect(a.harmony.mode).toBe(b.harmony.mode);
     expect(a.sections.storm.on).toBe(true);
     expect(a.sections.storm.salience).toBeGreaterThan(a.sections.winds.salience);
+  });
+});
+
+describe('places and conditions sound distinct', () => {
+  it('the sky changes how the strings play', () => {
+    const art = (category) => composeScore(makeSnapshot({ weather: { category, precipitation: category === 'rain' ? 3 : 0 } })).sections.strings.articulation;
+    expect(art('clear')).toBe('legato');
+    expect(art('cloudy')).toBe('muted');
+    expect(art('rain')).toBe('pizz');
+    expect(art('storm')).toBe('tremolo');
+    expect(art('fog')).toBe('veil');
+    expect(art('snow')).toBe('sparse');
+    Object.values(STRING_TEXTURE).forEach((t) => expect(t.why.length).toBeGreaterThan(20));
+  });
+
+  it('cold dry air voices open fifths; warm humid air thick chords', () => {
+    expect(stringOpenness(-10, 0.3)).toBeGreaterThan(0.6);
+    expect(stringOpenness(30, 0.9)).toBeLessThan(0.3);
+  });
+
+  it('the tropics keep their life all year; cicadas sing on hot days', () => {
+    const gabon = makeSnapshot({
+      location: { lat: 0.4, lng: 9.45, biome: 'tropical', population: 700000 },
+      sun: { altitude: 40 },
+      weather: { temperature: 29, apparentTemperature: 33, humidity: 85 },
+      calendar: { season: 'autumn' },
+    });
+    const boston = makeSnapshot({ sun: { altitude: 40 }, weather: { temperature: 12, humidity: 55 }, calendar: { season: 'autumn' } });
+    const g = composeScore(gabon);
+    const b = composeScore(boston);
+    expect(g.sections.life.cicadas).toBeGreaterThan(0.5);
+    expect(b.sections.life.cicadas).toBe(0);
+    expect(g.sections.strings.openness).toBeLessThan(b.sections.strings.openness);
+    expect(g.harmony.root).not.toBe(b.harmony.root);
+    expect(g.legend.some((l) => l.source === 'Cicadas')).toBe(true);
   });
 });

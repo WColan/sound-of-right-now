@@ -7,6 +7,7 @@
  * Crickets chirp at exactly the rate Dolbear's law gives for the current
  *          temperature. Count chirps in 14 s, add 40: that's °F.
  * Frogs    a low pulsed chorus on humid spring/summer nights.
+ * Cicadas  heat you can hear: a rasping buzz on hot, bright days.
  */
 import { createSectionBase, createStochastic, createPeriodic, rampParam } from '../toolkit.js';
 import { createRng } from '../../../now/util.js';
@@ -98,7 +99,19 @@ export function createLifeSection(ctx) {
   frogFilter.connect(frogPan);
   frogPan.connect(frogBus);
 
-  let levels = { birds: 0, crickets: 0, frogs: 0 };
+  // ── Cicadas: a high, rasping buzz (tymbal clicks ~ 200 Hz) that swells and fades ──
+  const cicadaBus = new Tone.Gain(0);
+  cicadaBus.connect(base.output);
+  const cicadaNoise = new Tone.Noise({ type: 'white', volume: -18 });
+  const cicadaBand = new Tone.Filter({ frequency: 5200, type: 'bandpass', Q: 5 });
+  const cicadaBuzz = new Tone.Tremolo({ frequency: 190, depth: 0.85, wet: 1 }).start();
+  const cicadaSwell = new Tone.Tremolo({ frequency: 0.07, depth: 0.9, wet: 1 }).start(); // long rise and fall
+  cicadaNoise.connect(cicadaBand);
+  cicadaBand.connect(cicadaBuzz);
+  cicadaBuzz.connect(cicadaSwell);
+  cicadaSwell.connect(cicadaBus);
+
+  let levels = { birds: 0, crickets: 0, frogs: 0, cicadas: 0 };
 
   const birds = createStochastic(ctx, {
     rate: () => levels.birds * 0.7 * (1 - ctx.expr.stillness * 0.6),
@@ -129,12 +142,15 @@ export function createLifeSection(ctx) {
     output: base.output,
     base,
     update(next, stage, ramp = 10) {
-      levels = { birds: next.birds ?? 0, crickets: next.crickets ?? 0, frogs: next.frogs ?? 0 };
+      levels = { birds: next.birds ?? 0, crickets: next.crickets ?? 0, frogs: next.frogs ?? 0, cicadas: next.cicadas ?? 0 };
       chirpRate = next.chirpRate ?? 0;
       base.set({ on: next.on, level: 1, roleDb: stage?.gainDb ?? 0 }, ramp);
       rampParam(birdBus.gain, levels.birds, ramp);
       rampParam(cricketBus.gain, levels.crickets * 0.8, ramp);
       rampParam(frogBus.gain, levels.frogs * 0.8, ramp);
+      rampParam(cicadaBus.gain, levels.cicadas * 0.55, ramp);
+      if (levels.cicadas > 0.02 && base.audible && cicadaNoise.state !== 'started') cicadaNoise.start();
+      if (levels.cicadas <= 0.02 && cicadaNoise.state === 'started') cicadaNoise.stop('+8');
     },
     /** Call once per location with the observed species names. */
     setCast(names, seedKey) { cast = birdCast(names, seedKey); },
@@ -148,9 +164,13 @@ export function createLifeSection(ctx) {
       birds.stop();
       frogs.stop();
       cricketLoops.forEach((l) => l.stop());
+      if (cicadaNoise.state === 'started') cicadaNoise.stop();
     },
     pause() { this.stop(); },
-    resume() { this.start(); },
+    resume() {
+      this.start();
+      if (levels.cicadas > 0.02) cicadaNoise.start();
+    },
     motif: sing,
     play(n, d = 0.2, v = 0.5) { birdPool[0].synth.triggerAttackRelease(n, d, undefined, v); },
     playChord(notes, d = 0.2) { notes.slice(0, 4).forEach((n, i) => birdPool[i].synth.triggerAttackRelease(n, d)); },
@@ -158,7 +178,7 @@ export function createLifeSection(ctx) {
       this.stop();
       birdPool.forEach(({ synth, panner }) => { synth.dispose(); panner.dispose(); });
       crickets.forEach(({ synth, panner }) => { synth.dispose(); panner.dispose(); });
-      [frog, frogFilter, frogPan, birdBus, cricketBus, frogBus].forEach((n) => n.dispose());
+      [frog, frogFilter, frogPan, birdBus, cricketBus, frogBus, cicadaNoise, cicadaBand, cicadaBuzz, cicadaSwell, cicadaBus].forEach((n) => n.dispose());
       base.dispose();
     },
   };

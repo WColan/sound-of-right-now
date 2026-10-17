@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as Tone from 'tone';
-import { createOrchestra } from './engine.js';
+import { createOrchestra, entrancePlan } from './engine.js';
 import { composeScore, SECTION_IDS } from '../score.js';
 import { arrangeStage, createStageState } from '../stage.js';
 import { makeSnapshot } from '../../test/now-fixtures.js';
 import { levelToDb, dbToGain, pitchesInRange, nearestPitch } from './toolkit.js';
-import { voicePart } from './sections/strings.js';
+import { voicePart, chordPalette } from './sections/strings.js';
 import { spherePitch } from './sections/sky.js';
 import { birdCast } from './sections/life.js';
 import { dueStrike, quakeDelaySeconds } from './sections/town.js';
@@ -74,6 +74,13 @@ describe('toolkit', () => {
     expect(dueStrike(15.1, null)).toBeNull();
   });
 
+  it('chord palette: bare fifths in thin air, added ninth in heavy air', () => {
+    const chord = { notes: ['C4', 'E4', 'G4', 'B4'], scaleTones: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'] };
+    expect(chordPalette(chord, 0.9)).toEqual(['C4', 'G4']);
+    expect(chordPalette(chord, 0.5)).toEqual(chord.notes);
+    expect(chordPalette(chord, 0.1)).toEqual([...chord.notes, 'D4']);
+  });
+
   it('quakes take longer to arrive from farther away', () => {
     expect(quakeDelaySeconds(30)).toBeLessThan(quakeDelaySeconds(3000));
     expect(quakeDelaySeconds(99999)).toBe(25);
@@ -113,10 +120,31 @@ describe('orchestra', () => {
     o.dispose();
   });
 
-  it('silent sections are gated to zero gain; active ones are audible', () => {
+  it('a place introduces itself: strings first, then what is featured here', () => {
+    const { score, stage } = scenario({ weather: { windSpeed: 35, windGusts: 60 }, marine: { waveHeight: 3, wavePeriod: 12, waveDirection: 90 } });
+    const plan = entrancePlan(score, stage);
+    expect(plan[0].id).toBe('strings');
+    const at = Object.fromEntries(plan.map((p) => [p.id, p.at]));
+    stage.foreground.filter((id) => id !== 'strings').forEach((id) => expect(at[id]).toBeLessThan(at.basses ?? Infinity));
+  });
+
+  it('starts silent and fades sections in on their entrance', () => {
     const o = createOrchestra({ library: lib, rng: () => 0.4 });
     const { score, stage } = scenario({});
     o.start(score, stage);
+    expect(o.sections.strings.base.state.entryDb).toBe(-60);
+    Tone.__advance(1);
+    expect(o.sections.strings.base.state.entryDb).toBe(0);
+    expect(o.sections.basses.base.state.entryDb).toBe(-60);
+    Tone.__advance(40);
+    expect(o.sections.basses.base.state.entryDb).toBe(0);
+    o.dispose();
+  });
+
+  it('silent sections are gated to zero gain; active ones are audible', () => {
+    const o = createOrchestra({ library: lib, rng: () => 0.4 });
+    const { score, stage } = scenario({});
+    o.start(score, stage, { entrance: false });
     expect(o.sections.iss.base.output.gain.value).toBe(0);
     expect(o.sections.strings.base.output.gain.value).toBeGreaterThan(0);
     o.dispose();
@@ -125,7 +153,7 @@ describe('orchestra', () => {
   it('muting a section silences it and unmuting restores it', () => {
     const o = createOrchestra({ library: lib, rng: () => 0.4 });
     const { score, stage } = scenario({});
-    o.start(score, stage);
+    o.start(score, stage, { entrance: false });
     o.setSectionMuted('strings', true);
     expect(o.sections.strings.base.output.gain.value).toBe(0);
     o.setSectionMuted('strings', false);
@@ -197,7 +225,7 @@ describe('orchestra', () => {
   it('conductor stillness pulls non-bed sections down more than the bed', () => {
     const o = createOrchestra({ library: lib, rng: () => 0.4 });
     const { score, stage } = scenario({ weather: { windSpeed: 30, windGusts: 50 } });
-    o.start(score, stage);
+    o.start(score, stage, { entrance: false });
     const strings0 = o.sections.strings.base.output.gain.value;
     const winds0 = o.sections.winds.base.output.gain.value;
     o.setExpression({ dynamicSwell: 0 }, 1);
