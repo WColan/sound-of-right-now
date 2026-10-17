@@ -1,0 +1,2 @@
+Samples derived from VSCO 2: Community Edition by Versilian Studios (https://github.com/sgossner/VSCO-2-CE).
+Released under CC0 1.0 Universal — public domain dedication. Trimmed, normalised and transcoded for this project.

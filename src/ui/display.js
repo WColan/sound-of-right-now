@@ -58,7 +58,7 @@ export function createDisplay() {
 
     /**
      * Update the display with weather data and musical params.
-     * @param {import('../weather/fetcher.js').WeatherState} weather
+     * @param {object} weather - WeatherNow (src/now/sources/weather.js)
      * @param {object} musicalParams
      * @param {object} [tideData]
      * @param {object} [aqiData]

@@ -1,1004 +1,480 @@
 import * as Tone from 'tone';
 import { inject } from '@vercel/analytics';
-import { createSoundEngine } from './music/engine.js';
-import { mapWeatherToMusic } from './music/mapper.js';
-import { createInterpolator } from './music/interpolator.js';
-import { getBrowserLocation, formatLocation, reverseGeocode } from './weather/location.js';
+import { createOrchestra } from './music/orchestra/engine.js';
+import { createSampleLibrary } from './music/orchestra/samples.js';
+import { composeScore, SECTION_IDS } from './music/score.js';
+import { arrangeStage, createStageState } from './music/stage.js';
+import { createNowFeed } from './now/feed.js';
+import { buildSnapshot } from './now/snapshot.js';
+import { localClock } from './now/calendar.js';
+import { getBrowserLocation, formatLocation, reverseGeocodeDetails } from './weather/location.js';
 import { buildShareSearch, parseSharedCoordinates, resolveStartupLocation } from './weather/share.js';
-import { getMoonriseTime, getMoonsetTime, getMoonPhaseName } from './weather/moon.js';
-import { describeWeatherCode } from './weather/codes.js';
-import { getSeasonName } from './weather/season.js';
-import { degreesToCompass } from './ui/display.js';
-import { createWeatherFetcher } from './weather/fetcher.js';
-import { createTideFetcher } from './weather/tides.js';
-import { createAirQualityFetcher } from './weather/airquality.js';
 import { createDisplay } from './ui/display.js';
 import { createControls } from './ui/controls.js';
 import { createVisualizer } from './ui/visualizer.js';
+import { createNowVisualizer } from './visual/renderer.js';
+import { computeMood, cssAccent } from './visual/mood.js';
+import skyData from './visual/data/sky.json';
+import { createChordDisplay } from './ui/chord-display.js';
+import { createCaption } from './ui/caption.js';
+import { buildNowPanel, buildLegendPanel, buildBlendLine, SECTION_LABELS } from './ui/now-panels.js';
 import { setupInfoPanels } from './ui/panels.js';
 import { setupOverlayStartShortcuts, setupSecondaryMenu, showPrimaryControls } from './ui/shell.js';
 import { handleMainKeydown } from './ui/shortcuts.js';
 import { setupGuitarPanel, toggleGuitarPanel as toggleGuitarPanelFn, onGuitarChordChange, stopCountdown } from './ui/guitar.js';
 import { setupPullToRefresh } from './ui/pull-to-refresh.js';
-import { classifyBiome } from './weather/biome.js';
-import {
-  createMovementConductor,
-  CONDUCTOR_ENABLED,
-  PHASE_TEMPLATE,
-  smoothstep,
-} from './music/movement.js';
+import { createMovementConductor, CONDUCTOR_ENABLED, PHASE_TEMPLATE, smoothstep } from './music/movement.js';
 import { VERSION } from './version.js';
 
 // Vercel Web Analytics (framework-agnostic integration for this vanilla JS app).
 inject();
 
-// Print version to console for quick production build identification
 console.info(`[SONAR] v${VERSION}`);
-
-// Stamp version into the landing overlay badge
 const overlayVersion = document.getElementById('overlay-version');
 if (overlayVersion) overlayVersion.textContent = `v${VERSION}`;
 
-// Pull-to-refresh for mobile PWA (no browser chrome → no way to reload otherwise)
 setupPullToRefresh();
 
-let engine = null;
-let interpolator = null;
-let weatherFetcher = null;
-let tideFetcher = null;
-let aqiFetcher = null;
+const isMobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+
+let library = null;          // shared sample buffers — survive location changes
+let orchestra = null;
+let feed = null;
 let display = null;
-let visualizer = null;
+let visual = null;           // WebGL visualizer, or the Canvas fallback
+let legacyVisual = false;
+let chordDisplay = null;
+let caption = null;
 let movementConductor = null;
 let conductorTickInterval = null;
-let currentTideData = null;
-let currentAqiData = null;
-let currentLatitude = null;
-let currentLongitude = null;
-let currentBiome = 'grassland';
-let isPlaying = true; // Track play/pause state for the pause button
+let clockInterval = null;
+let isPlaying = true;
 let currentLocationRequestId = 0;
 let userVolumeScale = 0.8;
 let secondaryMenuController = null;
+let currentLatitude = null;
+let currentLongitude = null;
+const mutedSections = new Set();
 
-// ── Voice volume param mapping (module-level for applyExpression access) ──
-const VOICE_VOLUME_PARAMS_MAP = {
-  pad: 'padVolume', arpeggio: 'arpeggioVolume', bass: 'bassVolume',
-  melody: 'melodyVolume', texture: 'textureVolume',
-  percussion: 'percussionVolume', drone: 'droneVolume',
-  windChime: 'windChimeVolume', choir: 'choirVolume',
-};
-let mutedVoiceTracker = null; // Set reference, assigned in boot()
+// Session state
+const listenStartedAt = Date.now();
+let lastSnapshot = null;
+let lastScore = null;
+let lastStage = null;
+let stageState = createStageState();
+let spotlight = null;
+let lastPhaseName = null;
+let castAppliedTo = null;
+let orchestraStarted = false;
+let startFallbackTimer = null;
+const featuredThisMovement = new Set();
 
-// ── Pressure trend buffer ──
-// Rolling window of the last 3 pressure readings (timestamp + value).
-// Used to detect rising/falling barometer and modulate tension/brightness.
-const pressureHistory = []; // [{ value: number, timestamp: number }, ...]
-
-/**
- * Update the pressure history and return the normalized trend.
- * Returns a value in [-1, +1]: negative = falling, positive = rising, 0 = stable.
- */
-function getPressureTrend(pressureHpa) {
-  pressureHistory.push({ value: pressureHpa, timestamp: Date.now() });
-  if (pressureHistory.length > 3) pressureHistory.shift();
-
-  if (pressureHistory.length < 2) return 0;
-  const delta = pressureHistory.at(-1).value - pressureHistory[0].value;
-  return Math.max(-1, Math.min(1, delta / 5)); // Normalize: ±5 hPa = ±1.0
-}
-
-/**
- * Compute aurora intensity for high-latitude locations.
- * Returns 0-1: product of latitude factor, darkness factor, and sky clarity.
- *
- * Thresholds are intentionally generous — aurora is high-altitude light that
- * punches through moderate cloud cover and is faintly visible during late dusk:
- *   Cloud cover: visible up to ~65%, fading progressively (not a hard cutoff)
- *   Brightness:  faintly visible up to 0.3 (late dusk), peaks in full dark
- */
-function computeAuroraIntensity(lat, brightness, cloudCover) {
-  const latFactor = Math.max(0, Math.min(1, (Math.abs(lat) - 55) / 15));
-  // Wider brightness window: faintly visible in late dusk (0.3), peaks at full dark
-  const darkFactor = Math.max(0, Math.min(1, (0.3 - brightness) / 0.3));
-  // Cloud cover: progressive dimming up to ~65%; quadratic for natural falloff
-  const cloudNorm = Math.min(1, cloudCover / 65);
-  const clearFactor = Math.max(0, 1 - cloudNorm * cloudNorm);
-  return latFactor * darkFactor * clearFactor;
-}
-
-// ── Expression swell ranges (additive dB per voice at full intensity) ──
-const SWELL_RANGES = {
-  padVolume: 4, arpeggioVolume: 6, bassVolume: 3, textureVolume: 4,
-  percussionVolume: 4, droneVolume: 3, melodyVolume: 5, choirVolume: 4,
-  windChimeVolume: 3,
-};
-
-// ── Stillness attenuation (max dB pullback at end of stillness) ──
-const STILLNESS_DB_CUTS = {
-  padVolume: 12,
-  arpeggioVolume: 14,
-  bassVolume: 10,
-  textureVolume: 13,
-  percussionVolume: 16,
-  droneVolume: 11,
-  melodyVolume: 15,
-  choirVolume: 12,
-  windChimeVolume: 8,
-};
+const listenMinutes = () => (Date.now() - listenStartedAt) / 60000;
 
 function getStillnessDepth() {
   const phase = movementConductor?.getCurrentPhase();
   if (!phase || phase.name !== 'stillness') return 0;
   const span = Math.max(1e-6, PHASE_TEMPLATE.stillness.end - PHASE_TEMPLATE.stillness.start);
-  const localProgress = (phase.progress - PHASE_TEMPLATE.stillness.start) / span;
-  return smoothstep(Math.max(0, Math.min(1, localProgress)));
+  return smoothstep(Math.max(0, Math.min(1, (phase.progress - PHASE_TEMPLATE.stillness.start) / span)));
 }
 
-/**
- * Apply movement expression on top of weather baselines.
- * Reads the interpolator's currentParams for weather values and adds
- * expression offsets using the engine's rampParam API.
- *
- * When CONDUCTOR_ENABLED is false, this is a no-op.
- *
- * @param {object} expression - From movementConductor.getExpression()
- * @param {number} rampTime - Seconds to ramp (smooth transitions)
- */
-function applyExpression(expression, rampTime = 5) {
-  if (!CONDUCTOR_ENABLED || !engine || !interpolator) return;
-
-  const params = interpolator.currentParams;
-  if (!params) return;
-  const stillnessDepth = getStillnessDepth();
-
-  const { dynamicSwell, harmonicTension, rhythmicEnergy, melodicUrgency, effectDepth } = expression;
-
-  // ── Voice volumes: additive dB swell ──
-  const mutedVoicesSet = mutedVoiceTracker;
-  for (const [paramKey, maxSwell] of Object.entries(SWELL_RANGES)) {
-    const baseline = params[paramKey];
-    if (baseline == null) continue;
-
-    // Find voice name from param key
-    const voiceName = Object.entries(VOICE_VOLUME_PARAMS_MAP).find(([, p]) => p === paramKey)?.[0];
-    if (voiceName && mutedVoicesSet?.has(voiceName)) continue; // Don't swell muted voices
-
-    const swellDb = dynamicSwell * maxSwell;
-    const stillnessCutDb = (STILLNESS_DB_CUTS[paramKey] ?? 10) * stillnessDepth;
-    engine.rampParam(paramKey, baseline + swellDb - stillnessCutDb, rampTime);
-  }
-
-  // ── Melody: extra swell + probability scaling ──
-  if (engine.voices?.melody) {
-    const melodicScale = Math.max(0.08, (1 + melodicUrgency * 0.6) * (1 - stillnessDepth * 0.9));
-    engine.voices.melody.setProbabilityScale(melodicScale);
-  }
-
-  // ── Harmonic tension ──
-  const settledTension = Math.max(0, harmonicTension * (1 - stillnessDepth * 0.85));
-  engine.setMovementTension(settledTension);
-
-  // ── Rhythm: density boost ──
-  const baseDensity = params.rhythmDensity ?? 0.2;
-  const boostedDensity = baseDensity * (1 + rhythmicEnergy * 0.8);
-  const settledDensity = boostedDensity * (1 - stillnessDepth * 0.95);
-  engine.rampParam('rhythmDensity', Math.max(0.01, Math.min(1, settledDensity)), rampTime);
-
-  // ── Effects: reverb, chorus, delay, filter ──
-  const baseReverbWet = params.reverbWet ?? 0.3;
-  const targetReverbWet = Math.max(
-    0.03,
-    Math.min(0.7, baseReverbWet + effectDepth * 0.15) * (1 - stillnessDepth * 0.75),
-  );
-  engine.rampParam('reverbWet', targetReverbWet, rampTime);
-
-  const baseChorusDepth = params.chorusDepth ?? 0.5;
-  const targetChorusDepth = Math.max(
-    0.02,
-    Math.min(0.9, baseChorusDepth + effectDepth * 0.2) * (1 - stillnessDepth * 0.9),
-  );
-  engine.rampParam('chorusDepth', targetChorusDepth, rampTime);
-
-  const baseDelayFeedback = params.delayFeedback ?? 0.2;
-  const targetDelayFeedback = Math.max(
-    0.02,
-    Math.min(0.5, baseDelayFeedback + effectDepth * 0.1) * (1 - stillnessDepth * 0.92),
-  );
-  engine.rampParam('delayFeedback', targetDelayFeedback, rampTime);
-
-  // Master filter opens during expression swell
-  const baseMasterFilter = params.masterFilterCutoff ?? 8000;
-  const targetMasterFilter = Math.max(
-    1200,
-    Math.min(16000, baseMasterFilter * (1 + effectDepth * 0.4)) * (1 - stillnessDepth * 0.65),
-  );
-  engine.rampParam('masterFilterCutoff', targetMasterFilter, rampTime);
-
-  // Spatial width expands during swell
-  const baseArpWidth = params.arpeggioWidth ?? 0.4;
-  const targetArpWidth = Math.max(
-    0.05,
-    Math.min(1, baseArpWidth + effectDepth * 0.2) * (1 - stillnessDepth * 0.85),
-  );
-  engine.rampParam('arpeggioWidth', targetArpWidth, rampTime);
-  const baseMelWidth = params.melodyWidth ?? 0.3;
-  const targetMelWidth = Math.max(
-    0.05,
-    Math.min(1, baseMelWidth + effectDepth * 0.15) * (1 - stillnessDepth * 0.85),
-  );
-  engine.rampParam('melodyWidth', targetMelWidth, rampTime);
-
-  // ── Microtonal: activate when harmonicTension is high ──
-  if (settledTension > 0.6 && stillnessDepth < 0.35 && engine.updateMicrotonalContext) {
-    // Force microtonal on during high tension regardless of weather
-    engine.updateMicrotonalContext('fog', 0, 0); // 'fog' triggers microtonal
-  }
-
-  // Log expression state periodically
-  const phase = movementConductor?.getCurrentPhase();
-  if (phase) {
-    console.log(
-      `🎼 Expression: ${phase.name} (mvt #${phase.movementNumber} ${phase.personality}) ` +
-      `intensity=${expression.intensity.toFixed(2)} swell=${dynamicSwell.toFixed(2)} ` +
-      `tension=${harmonicTension.toFixed(2)} rhythm=${rhythmicEnergy.toFixed(2)} ` +
-      `melody=${melodicUrgency.toFixed(2)} fx=${effectDepth.toFixed(2)} ` +
-      `still=${stillnessDepth.toFixed(2)}`
-    );
-  }
+/** Before the orchestra starts, the sky can already be drawn. */
+function renderVisualOnly(snapshot, score) {
+  const mood = computeMood(snapshot, score, { listenMinutes: listenMinutes() });
+  if (visual?.supported) visual.setMood(mood, { activity: snapshot.calendar.activity });
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(cssAccent(mood))) root.style.setProperty(k, v);
 }
 
-/**
- * Start the conductor tick interval.
- * Ticks every 8 seconds for smooth expression between 60s weather polls.
- */
+// ── The heart: snapshot → score → stage → orchestra + light ──
+function render(snapshot, { ramp = 8, force = false } = {}) {
+  if (!orchestra || !snapshot) return;
+  // The first real data replaces the placeholder: don't let placeholder features hold the stage
+  if (snapshot.weather && !lastSnapshot?.weather) stageState = createStageState();
+  lastSnapshot = snapshot;
+  const score = composeScore(snapshot, { listenMinutes: listenMinutes(), previousMode: lastScore?.harmony.mode });
+  const stage = arrangeStage(score, stageState, Date.now(), spotlight);
+  stageState = stage;
+  lastScore = score;
+  lastStage = stage;
+  stage.foreground.forEach((id) => featuredThisMovement.add(id));
+  if (snapshot.life?.topBirds?.length && castAppliedTo !== orchestra) {
+    orchestra.sections.life.setCast(snapshot.life.topBirds);
+    castAppliedTo = orchestra;
+  }
+  // The orchestra waits for the real weather, so every place opens as itself
+  // (not with a generic placeholder chord). A fallback timer covers outages.
+  if (!orchestraStarted) {
+    if (!snapshot.weather && !force) return renderVisualOnly(snapshot, score);
+    clearTimeout(startFallbackTimer);
+    orchestra.start(score, stage);
+    orchestraStarted = true;
+  } else {
+    orchestra.update(score, stage, ramp);
+  }
+
+  const expr = movementConductor?.getExpression?.() ?? {};
+  const mood = computeMood(snapshot, score, { stillness: getStillnessDepth(), tension: expr.harmonicTension ?? 0, listenMinutes: listenMinutes() });
+  if (visual?.supported) {
+    visual.setMood(mood, { activity: snapshot.calendar.activity });
+  } else if (visual && legacyVisual) {
+    visual.updateState(legacyState(snapshot, score));
+  }
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(cssAccent(mood))) root.style.setProperty(k, v);
+
+  if (snapshot.weather) display?.update(snapshot.weather, { rootNote: score.harmony.root, scaleType: score.harmony.mode, bpm: score.harmony.bpm });
+  const details = document.getElementById('info-details');
+  if (details) details.textContent = buildBlendLine(snapshot, score);
+  if (CONDUCTOR_ENABLED && movementConductor) movementConductor.setWeatherContext(score.harmony.category);
+
+  announce(snapshot, score);
+  window.__now = { snapshot, score, stage, orchestra, visual, version: VERSION };
+}
+
+/** Rare moments get a caption the first time they happen. */
+function announce(snapshot, score) {
+  if (!caption) return;
+  const s = score.sections;
+  if (s.iss.on) caption.show(s.iss.visible ? 'The International Space Station is passing overhead — look up.' : 'The International Space Station is passing overhead.', { key: 'iss', cooldownMs: 60 * 60000 });
+  else if (s.aurora.on && s.aurora.level > 0.3) caption.show(`Geomagnetic storm (Kp ${snapshot.space.kp.toFixed(0)}) — aurora possible.`, { key: 'aurora' });
+  else if (s.horns.on && s.horns.mode === 'dawn') caption.show('Sunrise.', { key: 'dawn', cooldownMs: 12 * 3600000 });
+  else if (s.horns.on && s.horns.mode === 'dusk') caption.show('Golden hour.', { key: 'dusk', cooldownMs: 12 * 3600000 });
+  else if (s.meteors.on && s.meteors.shower) caption.show(`The ${s.meteors.shower} are active tonight.`, { key: 'meteors', cooldownMs: 6 * 3600000 });
+  else if (s.spheres.unlocked && s.spheres.on) caption.show(`${s.spheres.tones.map((t) => t.planet).join(', ')} — the music of the spheres.`, { key: 'spheres', cooldownMs: 6 * 3600000 });
+  else if (snapshot.calendar.holiday) caption.show(`${snapshot.calendar.holiday.name}.`, { key: 'holiday', cooldownMs: 12 * 3600000 });
+}
+
+/** Map the new mood onto the v1 Canvas visualizer's state (no-WebGL2 fallback). */
+function legacyState(snapshot, score) {
+  const { sky, weather: w } = snapshot;
+  const toDate = (d) => d ?? null;
+  return {
+    timeOfDay: sky.twilight === 'day' ? 'afternoon' : sky.twilight === 'golden' ? (sky.sun.rising ? 'dawn' : 'dusk') : 'night',
+    weatherCategory: score.harmony.category,
+    windSpeed: w?.windSpeed ?? 0,
+    windDirection: w?.windDirection ?? 0,
+    moonPhase: sky.moon.phaseDeg / 360,
+    moonFullness: sky.moon.illumination,
+    brightness: score.master.light,
+    tideLevel: snapshot.tide?.level ?? null,
+    sunTransition: score.sections.horns.warmth ?? 0,
+    cloudCover: w?.cloudCover ?? 0,
+    filterWarmth: score.sections.horns.warmth ?? 0,
+    aqiNorm: score.master.haze,
+    temperature: w?.temperature ?? 10,
+    latitude: snapshot.location.lat,
+    sunrise: toDate(w?.sunrise),
+    sunset: toDate(w?.sunset),
+    milkyWayIntensity: sky.darkness * (1 - (w?.cloudCover ?? 0) / 100),
+    biome: snapshot.location.biome,
+    elevation: snapshot.location.elevation,
+    terrainSeed: Math.abs(Math.sin(snapshot.location.lat * 1234.5 + snapshot.location.lng * 6789.1)) * 10000,
+    auroraIntensity: score.sections.aurora.level,
+  };
+}
+
+// ── Conductor ──
+function applyConductor() {
+  if (!CONDUCTOR_ENABLED || !movementConductor || !orchestra) return;
+  movementConductor.tick();
+  const phase = movementConductor.getCurrentPhase();
+  const stillness = getStillnessDepth();
+  orchestra.setExpression(movementConductor.getExpression(), stillness, 5);
+  // Entering stillness: recapitulate the motifs that mattered this movement
+  if (phase?.name === 'stillness' && lastPhaseName !== 'stillness' && featuredThisMovement.size) {
+    orchestra.playRecap([...featuredThisMovement]);
+  }
+  if (phase?.name === 'breathing' && lastPhaseName && lastPhaseName !== 'breathing') featuredThisMovement.clear();
+  lastPhaseName = phase?.name ?? null;
+}
+
 function startConductorTick() {
   stopConductorTick();
   if (!CONDUCTOR_ENABLED || !movementConductor) return;
-
   conductorTickInterval = setInterval(() => {
-    if (!isPlaying || !movementConductor) return;
-    movementConductor.tick();
-    applyExpression(movementConductor.getExpression(), 5);
+    if (isPlaying) applyConductor();
   }, 8000);
 }
 
 function stopConductorTick() {
-  if (conductorTickInterval) {
-    clearInterval(conductorTickInterval);
-    conductorTickInterval = null;
-  }
+  if (conductorTickInterval) clearInterval(conductorTickInterval);
+  conductorTickInterval = null;
 }
 
-// Clean up on HMR to prevent duplicate audio contexts
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
-    if (engine) engine.dispose();
-    if (weatherFetcher) weatherFetcher.stop();
-    if (tideFetcher) tideFetcher.stop();
-    if (aqiFetcher) aqiFetcher.stop();
-    if (visualizer) visualizer.dispose();
-    if (secondaryMenuController) secondaryMenuController.dispose();
-    stopConductorTick();
-  });
+// ── Clock: bells on the hour, stage spotlight expiry ──
+function startClock() {
+  clearInterval(clockInterval);
+  let primed = false;
+  clockInterval = setInterval(() => {
+    if (!orchestra || !lastSnapshot || !isPlaying) return;
+    const offset = lastSnapshot.weather?.utcOffsetSeconds ?? Math.round(lastSnapshot.location.lng / 15) * 3600;
+    const { hour } = localClock(Date.now(), offset);
+    if (!primed) {
+      orchestra.primeClock(hour);
+      primed = true;
+      return;
+    }
+    const duration = orchestra.tickClock(hour);
+    if (duration > 0) {
+      spotlight = { id: 'bells', until: Date.now() + duration * 1000 };
+      render(lastSnapshot, { ramp: 3 });
+    } else if (spotlight && spotlight.until < Date.now()) {
+      spotlight = null;
+      render(lastSnapshot, { ramp: 4 });
+    }
+  }, 2000);
 }
 
-/**
- * Process a weather update: map to music, interpolate, update display + visuals.
- */
-function onWeatherUpdate(weather) {
-  if (!interpolator || !display || !visualizer) return;
-
-  const pressureTrend = getPressureTrend(weather.pressure);
-
-  const musicalParams = mapWeatherToMusic(weather, {
-    tideLevel: currentTideData?.waterLevel ?? null,
-    aqiLevel: currentAqiData?.aqi ?? null,
-    pm25: currentAqiData?.pm25 ?? null,
-    latitude: currentLatitude ?? 40,
-    pressureTrend,
-    biome: currentBiome,
+function wireOrchestra(o) {
+  o.onChordChange((chordInfo) => {
+    if (legacyVisual) visual?.onChordChange?.(chordInfo);
+    else chordDisplay?.update(chordInfo);
+    onGuitarChordChange({ ...chordInfo, intervalSeconds: o.progressionPlayer.currentIntervalSeconds });
   });
+  o.onEvent((event) => {
+    if (visual?.supported) visual.event(event);
+  });
+  for (const id of mutedSections) o.setSectionMuted(id, true);
+}
 
-  interpolator.update(musicalParams);
-  display.update(weather, musicalParams, currentTideData, currentAqiData);
-
-  // Update conductor weather context for personality selection
-  if (CONDUCTOR_ENABLED && movementConductor) {
-    movementConductor.setWeatherContext(musicalParams._meta.category);
+function createOrchestraForLocation(lat, lng, { fadeIn }) {
+  if (orchestra) {
+    orchestra.dispose();
+    stopCountdown();
   }
+  library ??= createSampleLibrary(Tone);
+  orchestra = createOrchestra({ library });
+  wireOrchestra(orchestra);
+  // Until iNaturalist answers, the local bird cast is seeded from the place itself
+  orchestra.sections.life.setCast([], `${lat.toFixed(1)},${lng.toFixed(1)}`);
+  stageState = createStageState();
+  spotlight = null;
+  orchestraStarted = false;
+  orchestra.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
+  if (fadeIn) orchestra.setUserGainScale(userVolumeScale, 4);
+  orchestra.setSleepGainScale(1, 0);
+  // Draw the true sky right away; start the music when the weather answers,
+  // or after a few seconds with what we can compute locally.
+  const placeholder = buildSnapshot({ lat, lng }, Date.now());
+  render(placeholder, { ramp: 1 });
+  clearTimeout(startFallbackTimer);
+  startFallbackTimer = setTimeout(() => {
+    if (!orchestraStarted && orchestra) render(lastSnapshot ?? placeholder, { ramp: 1, force: true });
+  }, 6000);
+}
 
-  // Compute moonrise/moonset from phase + today's sunrise/sunset
-  const now = new Date();
-  const moonrise = getMoonriseTime(now, weather.sunrise, weather.sunset);
-  const moonset  = getMoonsetTime(now, weather.sunrise, weather.sunset);
-
-  // ── Milky Way shimmer intensity ──
-  // Progressive 0-1 value: dark night + low cloud cover + dim moon.
-  // Instead of a binary clear/not-clear gate, cloud cover dims gradually:
-  //   0% cloud  → full visibility
-  //  25% cloud  → ~50% (still clearly visible through gaps)
-  //  50% cloud  → ~12% (faint glow between clouds)
-  //  70%+ cloud → effectively invisible
-  // Precipitation categories (rain, snow, storm, fog) kill it outright.
-  const mwBrightnessAlpha = Math.max(0, (0.35 - musicalParams.padBrightness) / 0.35);
-  const mwMoonAlpha       = Math.max(0, (0.55 - (musicalParams._meta.moonFullness ?? 0)) / 0.55);
-  const mwCategory = musicalParams._meta.category;
-  const mwCloudPct = (weather.cloudCover ?? 0) / 100;
-  // Precipitation/fog blocks starlight entirely; clouds dim progressively
-  const mwPrecipBlock = (mwCategory === 'rain' || mwCategory === 'storm'
-    || mwCategory === 'snow' || mwCategory === 'fog' || mwCategory === 'drizzle')
-    ? 0 : 1;
-  // Quadratic falloff: gentle at low cloud %, steepens toward overcast
-  const mwCloudAlpha = Math.max(0, 1 - mwCloudPct * mwCloudPct * 2.0);
-  const milkyWayIntensity = mwPrecipBlock
-    * mwCloudAlpha
-    * Math.min(mwBrightnessAlpha, mwMoonAlpha);
-  // ── Aurora intensity — computed outside engine guard for visualizer use too ──
-  const auroraIntensity = computeAuroraIntensity(
-    currentLatitude ?? 0, musicalParams.padBrightness, weather.cloudCover ?? 0
-  );
-
-  // Update melody's golden-hour / full-moon probability boosts
-  if (engine) {
-    engine.updateCelestialContext(
-      musicalParams._meta.sunTransition,
-      musicalParams._meta.moonFullness,
-    );
-
-    // Update microtonal pitch drift (active for fog, high UV, or extreme heat)
-    const uvNorm = Math.min(1, (weather.uvIndex ?? 0) / 11);
-    engine.updateMicrotonalContext(
-      musicalParams._meta.category,
-      uvNorm,
-      weather.apparentTemperature ?? weather.temperature,
-    );
-
-    // Update wind chime strike frequency from current wind speed
-    engine.updateWindChime(weather.windSpeed);
-
-    // ── Aurora shimmer — boost choir formant resonance during northern lights ──
-    engine.updateAuroraShimmer(auroraIntensity);
-
-    // ── Milky Way shimmer ──
-    // Composite intensity (0-1) from progressive conditions:
-    //  1. Dark night  — padBrightness proxy (< 0.35 ≈ night/deep-dusk)
-    //  2. Low clouds  — progressive dimming with cloud cover (quadratic)
-    //  3. Dim moon    — moonFullness < 0.55 (bright moon washes it out)
-    //  4. No precip   — rain/snow/fog/drizzle blocks starlight
-    engine.updateMilkyWayShimmer(milkyWayIntensity);
-  }
-
-  visualizer.updateState({
-    timeOfDay: musicalParams._meta.timeOfDay,
-    weatherCategory: musicalParams._meta.category,
-    windSpeed: weather.windSpeed,
-    windDirection: weather.windDirection,
-    moonPhase: musicalParams._meta.moonPhase,
-    moonFullness: musicalParams._meta.moonFullness,
-    brightness: musicalParams.padBrightness,
-    tideLevel: currentTideData?.waterLevel ?? null,
-    sunTransition: musicalParams._meta.sunTransition,
-    cloudCover: weather.cloudCover ?? 0,
-    filterWarmth: musicalParams._meta.filterWarmth ?? 0,
-    aqiNorm: musicalParams._meta.aqiNorm ?? 0,
-    temperature: weather.temperature,
-    latitude: currentLatitude,
-    // Celestial positioning
-    sunrise: weather.sunrise,
-    sunset: weather.sunset,
-    moonrise,
-    moonset,
-    // Milky Way + shooting star gating intensity (0-1)
-    milkyWayIntensity,
-    // Biome + elevation + terrain seed for terrain silhouette (Feature 1/5)
-    biome: currentBiome,
-    elevation: weather.elevation ?? 0,
-    terrainSeed: Math.abs(Math.sin(currentLatitude * 1234.5 + currentLongitude * 6789.1)) * 10000,
-    // Aurora intensity for northern lights (Feature 4)
-    auroraIntensity,
-  });
-
-  // ── Detailed logging: data inputs → sound mappings ──
-  console.groupCollapsed(
-    `🌤 Weather Update: ${weather.temperature.toFixed(1)}°C ${musicalParams._meta.category} → ${musicalParams.rootNote} ${musicalParams.scaleType}`
-  );
-
-  console.log('%c── Environment Inputs ──', 'font-weight: bold; color: #7ba4ff');
-  console.table({
-    'Temperature':    { value: `${weather.temperature.toFixed(1)}°C`, effect: `→ ${musicalParams.rootNote} ${musicalParams.scaleType} (mode), ${musicalParams.bpm} BPM` },
-    'Humidity':       { value: `${weather.humidity}%`, effect: `→ reverb decay ${musicalParams.reverbDecay.toFixed(1)}s, wet ${(musicalParams.reverbWet * 100).toFixed(0)}%` },
-    'Pressure':       { value: `${weather.pressure.toFixed(0)} hPa`, effect: `→ bass cutoff ${musicalParams.bassCutoff.toFixed(0)}Hz, bass vol ${musicalParams.bassVolume.toFixed(1)}dB, drone vol ${musicalParams.droneVolume.toFixed(1)}dB` },
-    'Wind':           { value: `${weather.windSpeed.toFixed(1)} km/h @ ${weather.windDirection}°`, effect: `→ rhythm ${musicalParams.rhythmDensity.toFixed(2)}, arp "${musicalParams.arpeggioPattern}", perc pan ${musicalParams.percussionPan.toFixed(2)}` },
-    'UV Index':       { value: `${(weather.uvIndex ?? 0).toFixed(1)}`, effect: `→ arp filter ${musicalParams.arpeggioFilterCutoff.toFixed(0)}Hz` },
-    'Weather Code':   { value: `${weather.weatherCode} (${musicalParams._meta.category})`, effect: `→ spread ${musicalParams.padSpread}¢, perc "${musicalParams.percussionPattern}", arp "${musicalParams.arpeggioRhythmPattern}"` },
-    'Time of Day':    { value: musicalParams._meta.timeOfDay, effect: `→ brightness ${musicalParams.padBrightness.toFixed(2)}, master ${musicalParams.masterFilterCutoff.toFixed(0)}Hz, vel ${musicalParams.globalVelocityScale.toFixed(2)}x` },
-    'Moon':           { value: `${(musicalParams._meta.moonFullness * 100).toFixed(0)}% full`, effect: `→ LFO ${musicalParams.lfoRate.toFixed(3)}Hz/${musicalParams.lfoDepth.toFixed(2)}, chorus ${musicalParams.chorusDepth.toFixed(2)}` },
-    'Season':         { value: `factor ${musicalParams._meta.seasonalFactor.toFixed(2)}`, effect: `→ brightness/filter modulation` },
-    'AQI':            { value: currentAqiData ? `${currentAqiData.aqi} (norm ${musicalParams._meta.aqiNorm.toFixed(2)})` : 'n/a', effect: currentAqiData ? `→ filter haze, reverb boost` : '→ no effect' },
-    'Tide':           { value: currentTideData ? `${currentTideData.waterLevel.toFixed(1)}ft` : 'n/a', effect: currentTideData ? `→ bass swell` : '→ no effect' },
-    'Golden Hour':    { value: `${(musicalParams._meta.filterWarmth * 100).toFixed(0)}%`, effect: musicalParams._meta.filterWarmth > 0 ? `→ warm filter reduction` : '→ no effect' },
-  });
-
-  console.log('%c── Sound Output ──', 'font-weight: bold; color: #ffba7a');
-  console.table({
-    'Key & Tempo':    `${musicalParams.rootNote} ${musicalParams.scaleType} @ ${musicalParams.bpm} BPM`,
-    'Pad':            `vol ${musicalParams.padVolume}dB, bright ${musicalParams.padBrightness.toFixed(2)}, spread ${musicalParams.padSpread}¢`,
-    'Arpeggio':       `vol ${musicalParams.arpeggioVolume.toFixed(1)}dB, filter ${musicalParams.arpeggioFilterCutoff.toFixed(0)}Hz, pan ${musicalParams.arpeggioPan.toFixed(2)}`,
-    'Bass':           `vol ${musicalParams.bassVolume.toFixed(1)}dB, cutoff ${musicalParams.bassCutoff.toFixed(0)}Hz`,
-    'Drone':          `vol ${musicalParams.droneVolume.toFixed(1)}dB`,
-    'Melody':         `vol ${musicalParams.melodyVolume.toFixed(1)}dB, mood "${musicalParams.melodyMood}", pan ${musicalParams.melodyPan.toFixed(2)}`,
-    'Texture':        `vol ${musicalParams.textureVolume}dB, noise "${musicalParams.noiseType || 'off'}", filter ${musicalParams.textureFilterCutoff.toFixed(0)}Hz`,
-    'Percussion':     `vol ${musicalParams.percussionVolume}dB, "${musicalParams.percussionPattern}", pan ${musicalParams.percussionPan.toFixed(2)}`,
-    'Master Filter':  `${musicalParams.masterFilterCutoff.toFixed(0)}Hz`,
-    'Master Volume':  `${musicalParams.globalVelocityScale.toFixed(2)}x`,
-    'Reverb':         `decay ${musicalParams.reverbDecay.toFixed(1)}s, wet ${(musicalParams.reverbWet * 100).toFixed(0)}%`,
-    'Chorus/LFO':     `chorus ${musicalParams.chorusDepth.toFixed(2)}, LFO ${musicalParams.lfoRate.toFixed(3)}Hz/${musicalParams.lfoDepth.toFixed(2)}`,
-  });
-
-  console.groupEnd();
+function setPauseButtonState(playing) {
+  const pb = document.getElementById('pause-btn');
+  if (!pb) return;
+  pb.querySelector('.pause-icon')?.classList.toggle('hidden', !playing);
+  pb.querySelector('.play-icon')?.classList.toggle('hidden', playing);
+  pb.setAttribute('aria-label', playing ? 'pause' : 'play');
 }
 
 /**
- * Set up data fetching for a given location.
- * updateUrl = false for geolocation-based boots so stale coords don't persist
- * in the URL and get mistaken for a shared link on the next visit.
+ * Listen to a location: new orchestra, new feed.
+ * updateUrl = false for geolocation boots so stale coords don't masquerade as
+ * a shared link on the next visit.
  */
 async function startForLocation(latitude, longitude, locationName, { fadeIn = false, updateUrl = true } = {}) {
   const requestId = ++currentLocationRequestId;
-  display.setLocation(locationName || 'Loading...');
-
-  // Store lat/lng for seasonal awareness and permalink
+  display.setLocation(locationName || 'Loading…');
   currentLatitude = latitude;
   currentLongitude = longitude;
+  if (updateUrl) history.replaceState(null, '', buildShareSearch(latitude, longitude));
+  else history.replaceState(null, '', window.location.pathname);
 
-  // Update URL so the current location is shareable.
-  // Skip for geolocation-based loads: writing coords here would cause the next
-  // page visit to parse them as a "shared link" and bypass fresh geolocation.
-  if (updateUrl) {
-    history.replaceState(null, '', buildShareSearch(latitude, longitude));
-  } else {
-    // Clear any leftover share params (e.g. from a previously visited shared link)
-    history.replaceState(null, '', window.location.pathname);
+  feed?.stop();
+  lastSnapshot = null;
+  createOrchestraForLocation(latitude, longitude, { fadeIn });
+  if (CONDUCTOR_ENABLED && movementConductor) {
+    movementConductor.reset();
+    movementConductor.resume();
+    featuredThisMovement.clear();
+    startConductorTick();
   }
+  isPlaying = true;
+  setPauseButtonState(true);
 
-  // ── Tear down old audio engine ──
-  // Tone.js audio nodes are permanently destroyed by dispose() and cannot be
-  // restarted, so we recreate the engine from scratch on each location change.
-  // This prevents accumulation of orphaned synths, sequences, and LFOs — the
-  // source of the glitching heard after changing location more than once.
-  if (engine) {
-    engine.dispose();
-    stopCountdown();
-    engine = createSoundEngine();
-    engine.start({ bpm: 72 });
-    engine.onChordChange((chordInfo) => {
-      visualizer.onChordChange(chordInfo);
-      onGuitarChordChange({
-        ...chordInfo,
-        intervalSeconds: engine.progressionPlayer.currentIntervalSeconds,
-      });
-    });
-    // First load: start silent and swell up; location changes: cut in immediately
-    engine.setUserGainScale(fadeIn ? 0 : userVolumeScale, 0);
-    if (fadeIn) engine.setUserGainScale(userVolumeScale, 3);
-    engine.setSleepGainScale(1, 0);
-    // Recreate interpolator too — it closes over the old (now-disposed) engine
-    interpolator = createInterpolator(engine);
-    // Reset conductor for fresh location — new movement arc begins
-    if (CONDUCTOR_ENABLED && movementConductor) {
-      movementConductor.reset();
-      movementConductor.resume();
-      startConductorTick();
-    }
-    // New engine always starts playing — reset pause button accordingly
-    isPlaying = true;
-    const pb = document.getElementById('pause-btn');
-    if (pb) {
-      const pauseIcon = pb.querySelector('.pause-icon');
-      const playIcon = pb.querySelector('.play-icon');
-      pauseIcon?.classList.remove('hidden');
-      playIcon?.classList.add('hidden');
-      pb.setAttribute('aria-label', 'pause');
-    }
-  }
-
-  // Stop existing fetchers
-  if (weatherFetcher) weatherFetcher.stop();
-  if (tideFetcher) { tideFetcher.stop(); tideFetcher = null; }
-  if (aqiFetcher) { aqiFetcher.stop(); aqiFetcher = null; }
-  currentTideData = null;
-  currentAqiData = null;
-
-  // Classify biome for this location once weather provides elevation.
-  // Fire-and-forget; result is used on a subsequent weather update.
-  currentBiome = 'grassland'; // Reset to default while classifying
-  let biomeClassificationStarted = false;
-
-  // Set up weather fetching
-  const nextWeatherFetcher = createWeatherFetcher(latitude, longitude);
-  nextWeatherFetcher.onUpdate((weather) => {
+  feed = createNowFeed({ lat: latitude, lng: longitude, name: locationName });
+  feed.onSnapshot((snapshot) => {
     if (requestId !== currentLocationRequestId) return;
-    if (!biomeClassificationStarted) {
-      biomeClassificationStarted = true;
-      classifyBiome(latitude, longitude, { elevation: weather.elevation ?? 0 })
-        .then(b => { if (requestId === currentLocationRequestId) currentBiome = b; })
-        .catch(() => { /* Biome classification failed — grassland fallback is fine */ });
-    }
-    onWeatherUpdate(weather);
+    render(snapshot);
   });
-  weatherFetcher = nextWeatherFetcher;
-
-  // Set up tide fetching (may return null for inland locations)
-  try {
-    const nextTideFetcher = await createTideFetcher(latitude, longitude);
-    if (requestId !== currentLocationRequestId) return;
-    if (nextTideFetcher) {
-      tideFetcher = nextTideFetcher;
-      tideFetcher.onUpdate((data) => {
-        if (requestId !== currentLocationRequestId) return;
-        currentTideData = data;
-      });
-      tideFetcher.start();
+  feed.onEvent((event) => {
+    if (requestId !== currentLocationRequestId || !orchestra) return;
+    if (event.type === 'quake') {
+      const q = event.quake;
+      const delay = orchestra.triggerQuake(q);
+      spotlight = { id: 'earth', until: Date.now() + (delay + 12) * 1000 };
+      caption?.show(`M${q.mag.toFixed(1)} earthquake, ${Math.round(q.distanceKm).toLocaleString('en-US')} km away — ${q.place}.`, { key: `quake-${q.id}` });
+      if (lastSnapshot) render(lastSnapshot, { ramp: 3 });
     }
-  } catch {
-    // Tides not available — that's fine
-  }
+  });
+  feed.start();
+  startClock();
 
-  // Set up AQI fetching
-  try {
-    const nextAqiFetcher = createAirQualityFetcher(latitude, longitude);
-    if (requestId !== currentLocationRequestId) return;
-    aqiFetcher = nextAqiFetcher;
-    aqiFetcher.onUpdate((data) => {
-      if (requestId !== currentLocationRequestId) return;
-      currentAqiData = data;
-    });
-    aqiFetcher.start();
-  } catch {
-    // AQI not available — that's fine
-  }
-
-  // Start weather polling (triggers first onWeatherUpdate)
-  await nextWeatherFetcher.start();
-  if (requestId !== currentLocationRequestId) {
-    nextWeatherFetcher.stop();
-    return;
-  }
-
-  // Resolve location name from coordinates if needed
-  if (!locationName) {
-    const name = await reverseGeocode(latitude, longitude);
-    if (requestId !== currentLocationRequestId) return;
-    display.setLocation(name);
-  }
+  const details = await reverseGeocodeDetails(latitude, longitude);
+  if (requestId !== currentLocationRequestId) return;
+  if (!locationName) display.setLocation(details.name);
+  feed.setPlaceInfo({ name: locationName || details.name, countryCode: details.countryCode });
 }
 
-/**
- * Boot sequence: create engine with placeholder params, then connect to real weather.
- */
 async function boot(latitude, longitude, locationName, { updateUrl = true } = {}) {
   const overlay = document.getElementById('overlay');
   const infoDisplay = document.getElementById('info-display');
   const controls = document.getElementById('controls');
-  const canvas = document.getElementById('visualizer');
+  let canvas = document.getElementById('visualizer');
 
-  // Create the sound engine and interpolator
-  engine = createSoundEngine();
-  interpolator = createInterpolator(engine);
-
-  // Create movement conductor
-  if (CONDUCTOR_ENABLED) {
-    movementConductor = createMovementConductor();
-  }
-
-  // Create UI
+  if (CONDUCTOR_ENABLED) movementConductor = createMovementConductor();
   display = createDisplay();
+  caption = createCaption();
   createControls(async (result) => {
-    const name = formatLocation(result);
-    await startForLocation(result.latitude, result.longitude, name);
+    await startForLocation(result.latitude, result.longitude, formatLocation(result));
   });
 
-  // Wire pause/play button
+  // ── Pause / play ──
   const pauseBtn = document.getElementById('pause-btn');
-
-  function setPauseButtonState(playing) {
-    const pauseIcon = pauseBtn.querySelector('.pause-icon');
-    const playIcon = pauseBtn.querySelector('.play-icon');
-    if (playing) {
-      pauseIcon?.classList.remove('hidden');
-      playIcon?.classList.add('hidden');
-      pauseBtn.setAttribute('aria-label', 'pause');
-    } else {
-      pauseIcon?.classList.add('hidden');
-      playIcon?.classList.remove('hidden');
-      pauseBtn.setAttribute('aria-label', 'play');
-    }
-  }
-
   pauseBtn.addEventListener('click', () => {
+    if (!orchestra) return;
     if (isPlaying) {
-      engine.stop();
-      if (CONDUCTOR_ENABLED && movementConductor) movementConductor.pause();
+      orchestra.stop();
+      movementConductor?.pause();
     } else {
-      engine.resume();
-      if (CONDUCTOR_ENABLED && movementConductor) movementConductor.resume();
+      orchestra.resume();
+      movementConductor?.resume();
     }
     isPlaying = !isPlaying;
     setPauseButtonState(isPlaying);
   });
 
-  // Wire master volume slider
+  // ── Volume ──
   const volSlider = document.getElementById('volume-slider');
   if (volSlider) {
-    // Restore persisted value — guard against Number(null) === 0 footgun
-    const savedItem = localStorage.getItem('masterVolume');
-    const savedPercent = savedItem !== null ? Number(savedItem) : NaN;
-    const safePercent = Number.isFinite(savedPercent) ? Math.max(0, Math.min(100, savedPercent)) : 80;
-    volSlider.value = safePercent;
-    userVolumeScale = safePercent / 100;
-    // Don't set engine gain yet — fade-in happens after engine.start() below
-
+    let saved = NaN;
+    try {
+      const item = localStorage.getItem('masterVolume');
+      saved = item !== null ? Number(item) : NaN;
+    } catch { /* storage unavailable */ }
+    const pct = Number.isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 80;
+    volSlider.value = pct;
+    userVolumeScale = pct / 100;
     volSlider.addEventListener('input', () => {
       userVolumeScale = volSlider.value / 100;
-      engine.setUserGainScale(userVolumeScale, 0.1);
+      orchestra?.setUserGainScale(userVolumeScale, 0.1);
     });
-
-    // Persist preference
     volSlider.addEventListener('change', () => {
-      localStorage.setItem('masterVolume', volSlider.value);
+      try { localStorage.setItem('masterVolume', volSlider.value); } catch { /* noop */ }
     });
   }
 
-  // Secondary action menu
-  const menuBtn = document.getElementById('menu-btn');
-  const secondaryMenu = document.getElementById('secondary-menu');
+  // ── Menu ──
   secondaryMenuController?.dispose();
   secondaryMenuController = setupSecondaryMenu({
-    menuBtn,
-    secondaryMenu,
+    menuBtn: document.getElementById('menu-btn'),
+    secondaryMenu: document.getElementById('secondary-menu'),
     keepOpenItemIds: ['sleep-btn', 'share-btn'],
   });
 
-  // Wire sleep timer — cycles off → 30 → 60 → 90 min
+  // ── Sleep timer: off → 30 → 60 → 90 min, 60 s fade ──
   const sleepBtn = document.getElementById('sleep-btn');
-  const SLEEP_OPTIONS = [0, 30, 60, 90]; // 0 = off
+  const SLEEP_OPTIONS = [0, 30, 60, 90];
   let sleepIndex = 0;
   let sleepTimeout = null;
   let sleepFadeTimeout = null;
-
-  function clearSleepTimers() {
+  const clearSleepTimers = () => {
     clearTimeout(sleepTimeout);
     clearTimeout(sleepFadeTimeout);
-    sleepTimeout = null;
-    sleepFadeTimeout = null;
-  }
-
-  if (sleepBtn) {
-    sleepBtn.addEventListener('click', () => {
-      clearSleepTimers();
-      if (engine) engine.setSleepGainScale(1, 0.3);
-      sleepIndex = (sleepIndex + 1) % SLEEP_OPTIONS.length;
-      const minutes = SLEEP_OPTIONS[sleepIndex];
-      if (minutes === 0) {
+  };
+  sleepBtn?.addEventListener('click', () => {
+    clearSleepTimers();
+    orchestra?.setSleepGainScale(1, 0.3);
+    sleepIndex = (sleepIndex + 1) % SLEEP_OPTIONS.length;
+    const minutes = SLEEP_OPTIONS[sleepIndex];
+    if (minutes === 0) {
+      sleepBtn.textContent = 'sleep';
+      return;
+    }
+    sleepBtn.textContent = `${minutes}m`;
+    sleepTimeout = setTimeout(() => {
+      orchestra?.setSleepGainScale(0, 60);
+      sleepFadeTimeout = setTimeout(() => {
+        orchestra?.stop();
+        orchestra?.setSleepGainScale(1, 0);
+        movementConductor?.pause();
+        isPlaying = false;
+        setPauseButtonState(false);
+        sleepIndex = 0;
         sleepBtn.textContent = 'sleep';
-        if (engine) engine.setSleepGainScale(1, 2);
-        return;
-      }
-      sleepBtn.textContent = `${minutes}m`;
-      const totalMs = minutes * 60 * 1000;
-      const fadeMs = totalMs - 60_000; // begin fade 60s before end
-      sleepTimeout = setTimeout(() => {
-        if (engine) engine.setSleepGainScale(0, 60);
-        sleepFadeTimeout = setTimeout(() => {
-          if (engine) engine.stop();
-          if (engine) engine.setSleepGainScale(1, 0);
-          if (CONDUCTOR_ENABLED && movementConductor) movementConductor.pause();
-          isPlaying = false;
-          setPauseButtonState(false);
-          sleepIndex = 0;
-          sleepBtn.textContent = 'sleep';
-        }, 60_000);
-      }, Math.max(0, fadeMs));
-    });
-  }
+      }, 60_000);
+    }, Math.max(0, minutes * 60_000 - 60_000));
+  });
 
-  // Wire mute panel — per-voice mute toggles
+  // ── Mix: one toggle per section ──
   const mutePanel = document.getElementById('mute-panel');
   const mixBtn = document.getElementById('mix-btn');
-  const VOICE_VOLUME_PARAMS = VOICE_VOLUME_PARAMS_MAP;
-  const mutedVoices = new Set();
-  mutedVoiceTracker = mutedVoices; // Expose to module-level applyExpression
-
-  if (mixBtn && mutePanel) {
-    mixBtn.addEventListener('click', () => {
-      mutePanel.classList.toggle('hidden');
-      document.body.classList.toggle('mix-open', !mutePanel.classList.contains('hidden'));
-    });
+  if (mutePanel) {
+    mutePanel.innerHTML = '';
+    for (const id of SECTION_IDS) {
+      const btn = document.createElement('button');
+      btn.className = 'mute-btn';
+      btn.dataset.section = id;
+      btn.textContent = SECTION_LABELS[id] ?? id;
+      btn.addEventListener('click', () => {
+        const muted = !mutedSections.has(id);
+        if (muted) mutedSections.add(id);
+        else mutedSections.delete(id);
+        btn.classList.toggle('muted', muted);
+        orchestra?.setSectionMuted(id, muted);
+      });
+      mutePanel.appendChild(btn);
+    }
   }
-
-  document.querySelectorAll('.mute-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (!engine) return;
-      const voice = btn.dataset.voice;
-      const param = VOICE_VOLUME_PARAMS[voice];
-      if (!param) return;
-      if (mutedVoices.has(voice)) {
-        mutedVoices.delete(voice);
-        btn.classList.remove('muted');
-        let savedVol = interpolator.currentParams?.[param] ?? 0;
-        // Add expression swell offset if conductor is active
-        if (CONDUCTOR_ENABLED && movementConductor) {
-          const expr = movementConductor.getExpression();
-          const maxSwell = SWELL_RANGES[param] ?? 0;
-          savedVol += expr.dynamicSwell * maxSwell;
-        }
-        engine.rampParam(param, savedVol, 1);
-      } else {
-        mutedVoices.add(voice);
-        btn.classList.add('muted');
-        engine.rampParam(param, -80, 1);
-      }
-    });
+  mixBtn?.addEventListener('click', () => {
+    mutePanel.classList.toggle('hidden');
+    document.body.classList.toggle('mix-open', !mutePanel.classList.contains('hidden'));
   });
 
-  // ── Weather panel (W key) ──
+  // ── Panels: now (W), legend (A), conductor (C) ──
   const weatherPanel = document.getElementById('weather-panel');
-  const weatherContent = document.getElementById('weather-content');
-  const weatherClose = weatherPanel?.querySelector('.panel-close');
-  const weatherMenuBtn = document.getElementById('weather-btn');
-
-  // ── Audio panel (A key) ──
   const audioPanel = document.getElementById('audio-panel');
-  const audioContent = document.getElementById('audio-content');
-  const audioClose = audioPanel?.querySelector('.panel-close');
-  const audioMenuBtn = document.getElementById('audio-btn');
-
-  function capitalizeFirst(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
-  function describeWeatherCategory(cat) {
-    return { storm: 'Stormy', rain: 'Rainy', drizzle: 'Drizzling',
-      fog: 'Foggy', snow: 'Snowing', cloudy: 'Cloudy', clear: 'Clear skies' }[cat] ?? cat;
-  }
-
-  /**
-   * Format a Date as location-local time using a UTC offset.
-   */
-  function formatLocalTime(date, utcOffsetSeconds) {
-    if (!date) return '\u2014';
-    const localMs = date.getTime() + utcOffsetSeconds * 1000;
-    const d = new Date(localMs);
-    const h = d.getUTCHours() % 12 || 12;
-    const m = String(d.getUTCMinutes()).padStart(2, '0');
-    const period = d.getUTCHours() >= 12 ? 'PM' : 'AM';
-    return `${h}:${m} ${period}`;
-  }
-
-  function buildWeatherText() {
-    const w = weatherFetcher?.lastState;
-    if (!w) return 'Loading\u2026';
-
-    const tempF = Math.round(w.temperature * 9 / 5 + 32);
-    const feelsF = Math.round((w.apparentTemperature ?? w.temperature) * 9 / 5 + 32);
-    const condition = describeWeatherCode(w.weatherCode);
-    const windDir = degreesToCompass(w.windDirection);
-    const moonName = getMoonPhaseName();
-    const season = capitalizeFirst(getSeasonName(new Date(), currentLatitude ?? 40));
-
-    const lines = [
-      `<strong>Temperature:</strong> ${tempF}\u00B0F (feels ${feelsF}\u00B0F)`,
-      `<strong>Condition:</strong> ${condition}`,
-      `<strong>Humidity:</strong> ${w.humidity}%`,
-      `<strong>Wind:</strong> ${Math.round(w.windSpeed)} km/h ${windDir}`,
-      `<strong>Pressure:</strong> ${Math.round(w.pressure)} hPa`,
-      `<strong>Cloud Cover:</strong> ${w.cloudCover}%`,
-    ];
-
-    if (w.uvIndex != null && w.uvIndex > 0) {
-      lines.push(`<strong>UV Index:</strong> ${w.uvIndex.toFixed(0)}`);
-    }
-    if (currentAqiData?.aqi != null) {
-      lines.push(`<strong>AQI:</strong> ${currentAqiData.aqi}`);
-    }
-
-    const utcOff = w.utcOffsetSeconds ?? 0;
-    lines.push(`<strong>Sunrise:</strong> ${formatLocalTime(w.sunrise, utcOff)}`);
-    lines.push(`<strong>Sunset:</strong> ${formatLocalTime(w.sunset, utcOff)}`);
-    lines.push(`<strong>Moon:</strong> ${moonName}`);
-    lines.push(`<strong>Season:</strong> ${season}`);
-    lines.push(`<strong>Biome:</strong> ${capitalizeFirst(currentBiome)}`);
-
-    if (currentTideData) {
-      lines.push(`<strong>Tide:</strong> ${currentTideData.waterLevel.toFixed(1)} ft`);
-    }
-
-    return lines.join('<br>');
-  }
-
-  function buildAudioText() {
-    const p = interpolator?.currentParams;
-    const w = weatherFetcher?.lastState;
-    if (!p || !w) return 'Loading\u2026';
-
-    const tempF = Math.round(w.temperature * 9 / 5 + 32);
-    const chord = engine?.progressionPlayer?.currentChord;
-    const chordStr = chord ? `${chord.chordRootName} ${chord.quality}` : '\u2014';
-    const moonName = getMoonPhaseName();
-    const velScale = p.globalVelocityScale ?? 1;
-    const timeStr = velScale > 0.8 ? 'Daytime' : velScale > 0.5 ? 'Golden hour' : 'Night';
-
-    const arrow = '<span class="mapping-hint">\u2192</span>';
-    const sec = (s) => `<span class="mapping-hint">${s}</span>`;
-
-    const moonFullness = p._meta?.moonFullness ?? 0;
-    const filterWarmth = p._meta?.filterWarmth ?? 0;
-    const uvNorm = Math.min(1, Math.max(0, (w.uvIndex ?? 0) / 11));
-    const uvCents = Math.round(uvNorm * 15);
-    const cloudPct = Math.round(w.cloudCover ?? 0);
-    const melodyOrbit = (0.2 + 0.25 * moonFullness).toFixed(2);
-    const chimeActive = w.windSpeed > 3;
-    const chimeStr = chimeActive
-      ? `${p.windChimeVolume.toFixed(0)} dB \u00B7 decay \u00D7${(p.windChimeDecayMod ?? 1).toFixed(2)}`
-      : 'inactive (calm)';
-
-    const lines = [];
-
-    // ── Harmony ─────────────────────────────────────────────────────────────
-    lines.push(sec('\u2500\u2500 harmony \u2500\u2500'));
-    // Temperature → key/scale + BPM
-    lines.push(`<strong>${tempF}\u00B0F</strong> ${arrow} <strong>${p.rootNote} ${capitalizeFirst(p.scaleType)}</strong> \u00B7 ${p.bpm} BPM`);
-    // Weather category → mood, timbre, rhythm patterns, chord
-    lines.push(`<strong>${capitalizeFirst(p.weatherCategory)}</strong> ${arrow} ${capitalizeFirst(p.melodyMood)} mood \u00B7 ${p.timbreProfile ?? 'cool'} timbre`);
-    lines.push(`<strong>${capitalizeFirst(p.weatherCategory)}</strong> ${arrow} ${capitalizeFirst(p.arpeggioRhythmPattern ?? '')} arp \u00B7 ${capitalizeFirst(p.percussionPattern ?? '')} perc`);
-    lines.push(`<strong>Chord</strong> ${p.rootNote}: <strong>${chordStr}</strong>`);
-
-    lines.push('');
-
-    // ── Sky & Light ──────────────────────────────────────────────────────────
-    lines.push(sec('\u2500\u2500 sky & light \u2500\u2500'));
-    // Time of day → brightness chain
-    lines.push(`<strong>${timeStr}</strong> ${arrow} ${(p.padBrightness * 100).toFixed(0)}% brightness \u00B7 ${p.arpeggioFilterCutoff.toFixed(0)} Hz arp`);
-    // Cloud cover → brightness dimming (skip if negligible)
-    if (cloudPct > 5) {
-      lines.push(`<strong>${cloudPct}% cloud cover</strong> ${arrow} \u2212${Math.round(cloudPct * 0.25)}% brightness`);
-    }
-    // Golden hour warmth (only near sunrise/sunset)
-    if (filterWarmth > 0.05) {
-      lines.push(`<strong>Golden hour</strong> ${arrow} warm filter \u00B7 +${(filterWarmth * 0.3).toFixed(2)} chorus`);
-    }
-    // UV → pad shimmer
-    if (uvCents > 0) {
-      lines.push(`<strong>UV ${(w.uvIndex ?? 0).toFixed(0)}</strong> ${arrow} +${uvCents}\u00A2 pad shimmer`);
-    }
-
-    lines.push('');
-
-    // ── Space & Depth ────────────────────────────────────────────────────────
-    lines.push(sec('\u2500\u2500 space & depth \u2500\u2500'));
-    // Moon + humidity → chorus; moon → LFO
-    lines.push(`<strong>${moonName}</strong> + <strong>${w.humidity}%</strong> ${arrow} chorus ${(p.chorusDepth ?? 0).toFixed(2)} \u00B7 LFO ${p.lfoRate.toFixed(2)} Hz`);
-    // Moon → choir volume + melody spatial orbit
-    lines.push(`<strong>${moonName}</strong> ${arrow} choir ${(p.choirVolume ?? -18).toFixed(0)} dB \u00B7 melody orbit \u00B1${melodyOrbit}`);
-    // Humidity → reverb
-    lines.push(`<strong>${w.humidity}% humidity</strong> ${arrow} ${p.reverbDecay.toFixed(1)}s reverb \u00B7 ${(p.reverbWet * 100).toFixed(0)}% wet`);
-    // Pressure → bass, drone, sub-bass, delay
-    lines.push(`<strong>${Math.round(w.pressure)} hPa</strong> ${arrow} bass ${p.bassCutoff.toFixed(0)} Hz \u00B7 drone ${(p.droneCutoff ?? 200).toFixed(0)} Hz`);
-    lines.push(`<strong>${Math.round(w.pressure)} hPa</strong> ${arrow} sub \u00D7${(p.subBassGain ?? 0.3).toFixed(2)} \u00B7 delay ${(p.delayFeedback ?? 0.2).toFixed(2)}`);
-
-    // Season + biome as active modifiers
-    const seasonName = capitalizeFirst(p.seasonalPalette ?? '');
-    const biome = capitalizeFirst(p._meta?.biome ?? 'grassland');
-    lines.push(`${sec(seasonName)} \u00B7 ${sec(biome)} ${arrow} reverb, spread & brightness modifiers`);
-
-    lines.push('');
-
-    // ── Motion ───────────────────────────────────────────────────────────────
-    lines.push(sec('\u2500\u2500 motion \u2500\u2500'));
-    // Wind direction → arpeggio pattern + pan
-    if (w.windSpeed > 3) {
-      lines.push(`<strong>${Math.round(w.windDirection ?? 0)}\u00B0 direction</strong> ${arrow} ${capitalizeFirst(p.arpeggioPattern ?? '')} arp pattern`);
-    }
-    // Wind speed → rhythm, stereo width
-    lines.push(`<strong>${Math.round(w.windSpeed)} km/h wind</strong> ${arrow} ${(p.rhythmDensity * 100).toFixed(0)}% rhythm \u00B7 \u00B1${(p.arpeggioWidth ?? 0.5).toFixed(2)} width`);
-    // Wind chime: volume (wind-driven) + decay (humidity-driven)
-    lines.push(`<strong>wind chime</strong> ${arrow} ${chimeStr}`);
-
-    // ── Air Quality ──────────────────────────────────────────────────────────
-    const aqi = currentAqiData;
-    const hasAqiHaze = aqi && aqi.aqi > 50;
-    const hasGrain = aqi && aqi.pm25 != null && (p.pm25GrainIntensity ?? 0) > 0;
-    if (hasAqiHaze || hasGrain) {
-      lines.push('');
-      lines.push(sec('\u2500\u2500 air quality \u2500\u2500'));
-      if (hasAqiHaze) {
-        lines.push(`<strong>AQI ${aqi.aqi}</strong> ${arrow} haze filter \u00B7 +reverb`);
-      }
-      if (hasGrain) {
-        lines.push(`<strong>PM2.5 ${aqi.pm25.toFixed(0)} \u03BCg/m\u00B3</strong> ${arrow} ${Math.round((p.pm25GrainIntensity ?? 0) * 100)}% grain crackle`);
-      }
-    }
-
-    // ── Tide ─────────────────────────────────────────────────────────────────
-    if (currentTideData?.waterLevel != null) {
-      const tideNorm = Math.min(1, Math.max(0, (currentTideData.waterLevel + 1) / 9));
-      lines.push('');
-      lines.push(sec('\u2500\u2500 tide \u2500\u2500'));
-      lines.push(`<strong>${currentTideData.waterLevel.toFixed(1)} ft</strong> ${arrow} bass +${(tideNorm * 4).toFixed(1)} dB`);
-    }
-
-    return lines.join('<br>');
-  }
-
-  let toggleWeatherPanel = null;
-  let toggleAudioPanel = null;
-  let toggleConductorPanel = null;
-
   const conductorPanel = document.getElementById('conductor-panel');
-  const conductorStatus = document.getElementById('conductor-status');
-  const conductorTimeline = document.getElementById('conductor-timeline');
-  const conductorPlayhead = document.getElementById('conductor-playhead');
-  const conductorCurrent = document.getElementById('conductor-current');
-  const conductorNext = document.getElementById('conductor-next');
-  const conductorMenuBtn = document.getElementById('conductor-btn');
   const panelControls = setupInfoPanels({
     weatherPanel,
-    weatherContent,
-    weatherClose,
-    weatherMenuBtn,
-    buildWeatherText,
+    weatherContent: document.getElementById('weather-content'),
+    weatherClose: weatherPanel?.querySelector('.panel-close'),
+    weatherMenuBtn: document.getElementById('weather-btn'),
+    buildWeatherText: () => buildNowPanel(lastSnapshot),
     audioPanel,
-    audioContent,
-    audioClose,
-    audioMenuBtn,
-    buildAudioText,
+    audioContent: document.getElementById('audio-content'),
+    audioClose: audioPanel?.querySelector('.panel-close'),
+    audioMenuBtn: document.getElementById('audio-btn'),
+    buildAudioText: () => buildLegendPanel(lastScore, lastStage),
     conductorPanel,
-    conductorStatus,
-    conductorTimeline,
-    conductorPlayhead,
-    conductorCurrent,
-    conductorNext,
-    conductorMenuBtn,
+    conductorStatus: document.getElementById('conductor-status'),
+    conductorTimeline: document.getElementById('conductor-timeline'),
+    conductorPlayhead: document.getElementById('conductor-playhead'),
+    conductorCurrent: document.getElementById('conductor-current'),
+    conductorNext: document.getElementById('conductor-next'),
+    conductorMenuBtn: document.getElementById('conductor-btn'),
     movementConductor,
-    getTempoBpm: () => interpolator?.currentParams?.bpm ?? null,
+    getTempoBpm: () => lastScore?.harmony.bpm ?? null,
     conductorEnabled: CONDUCTOR_ENABLED,
   });
-  toggleWeatherPanel = panelControls.toggleWeatherPanel;
-  toggleAudioPanel = panelControls.toggleAudioPanel;
-  toggleConductorPanel = panelControls.toggleConductorPanel;
 
-  // Wire share button — copies current location permalink to clipboard
+  // ── Share ──
   const shareBtn = document.getElementById('share-btn');
   if (shareBtn) {
-    let shareFeedbackTimeout = null;
-    const showShareCopiedFeedback = () => {
-      clearTimeout(shareFeedbackTimeout);
-      shareBtn.classList.add('copied');
-      shareFeedbackTimeout = setTimeout(() => {
-        shareBtn.classList.remove('copied');
-      }, 1200);
-    };
-
+    let feedbackTimeout = null;
     shareBtn.addEventListener('click', async () => {
-      // Construct the share URL from the current loaded coordinates.
-      // We can't rely on window.location.href because geolocation-based loads
-      // intentionally skip writing coords to the URL (updateUrl: false).
-      const shareSearch = buildShareSearch(currentLatitude, currentLongitude);
-      const url = shareSearch
-        ? window.location.origin + window.location.pathname + shareSearch
-        : window.location.href;
+      const search = buildShareSearch(currentLatitude, currentLongitude);
+      const url = search ? window.location.origin + window.location.pathname + search : window.location.href;
       let copied = false;
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(url);
-          copied = true;
-        } else {
-          throw new Error('Clipboard API unavailable');
-        }
+        await navigator.clipboard.writeText(url);
+        copied = true;
       } catch {
-        // Fallback: select the URL from a temporary input
         const tmp = document.createElement('input');
         tmp.value = url;
         document.body.appendChild(tmp);
@@ -1006,25 +482,24 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
         copied = document.execCommand('copy');
         document.body.removeChild(tmp);
       }
-      if (copied) showShareCopiedFeedback();
+      if (copied) {
+        clearTimeout(feedbackTimeout);
+        shareBtn.classList.add('copied');
+        feedbackTimeout = setTimeout(() => shareBtn.classList.remove('copied'), 1200);
+      }
     });
   }
 
-  // Guitar practice panel (hidden — G key or chord display click)
+  // ── Guitar panel (G or click the chord) ──
   const guitarPanelEl = document.getElementById('guitar-panel');
   if (guitarPanelEl) setupGuitarPanel(guitarPanelEl);
+  document.getElementById('chord-display')?.addEventListener('click', () => {
+    if (orchestra) toggleGuitarPanelFn();
+  });
 
-  const chordDisplayEl = document.getElementById('chord-display');
-  if (chordDisplayEl) {
-    chordDisplayEl.addEventListener('click', () => {
-      if (engine) toggleGuitarPanelFn();
-    });
-  }
-
-  // ── Keyboard shortcuts ──
   document.addEventListener('keydown', (e) => {
     handleMainKeydown(e, {
-      isEngineReady: Boolean(engine),
+      isEngineReady: Boolean(orchestra),
       activeTagName: document.activeElement?.tagName,
       pauseBtn,
       secondaryMenuController,
@@ -1034,45 +509,32 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
       guitarPanel: guitarPanelEl,
       locationBtn: document.getElementById('location-btn'),
       mixBtn,
-      toggleWeatherPanel,
-      toggleAudioPanel,
-      toggleConductorPanel,
+      toggleWeatherPanel: panelControls.toggleWeatherPanel,
+      toggleAudioPanel: panelControls.toggleAudioPanel,
+      toggleConductorPanel: panelControls.toggleConductorPanel,
       toggleGuitarPanel: () => toggleGuitarPanelFn(),
       canvas,
     });
   });
 
-  // Create visualizer
-  visualizer = createVisualizer(canvas, engine.analyser, engine.waveformAnalyser);
-  visualizer.start();
+  // ── Visuals ── (analysers are proxied: the orchestra is rebuilt per location)
+  library = createSampleLibrary(Tone);
+  const fftProxy = { getValue: () => orchestra?.analyser.getValue() ?? null };
+  const waveProxy = { getValue: () => orchestra?.waveformAnalyser.getValue() ?? null };
+  visual = createNowVisualizer(canvas, { analyser: fftProxy, skyData, isMobile });
+  if (!visual.supported) {
+    // A canvas can't switch context types once WebGL2 has claimed it
+    const fresh = canvas.cloneNode(false);
+    canvas.replaceWith(fresh);
+    canvas = fresh;
+    legacyVisual = true;
+    visual = createVisualizer(canvas, fftProxy, waveProxy);
+    visual.onLightning(() => orchestra?.triggerThunder());
+  } else {
+    chordDisplay = createChordDisplay();
+  }
+  visual.start();
 
-  // Wire chord changes from engine → visualizer + guitar panel
-  engine.onChordChange((chordInfo) => {
-    visualizer.onChordChange(chordInfo);
-    onGuitarChordChange({
-      ...chordInfo,
-      intervalSeconds: engine.progressionPlayer.currentIntervalSeconds,
-    });
-  });
-
-  // Wire lightning flashes from visualizer → engine (thunder transient)
-  visualizer.onLightning(() => engine.triggerThunder());
-
-  // Wire shooting star spawns from visualizer → engine (soft bell ding)
-  visualizer.onShootingStar(() => engine.triggerShootingStar());
-
-  // Start engine with neutral placeholder params
-  const placeholderParams = mapWeatherToMusic({
-    temperature: 15, humidity: 50, pressure: 1013,
-    windSpeed: 8, windDirection: 180, weatherCode: 0,
-    sunrise: new Date(new Date().setHours(6, 30)),
-    sunset: new Date(new Date().setHours(17, 30)),
-    uvIndex: 0,
-  });
-  engine.start(placeholderParams);
-  interpolator.update(placeholderParams);
-
-  // Fade out overlay, show controls
   showPrimaryControls({
     overlay,
     infoDisplay,
@@ -1081,19 +543,22 @@ async function boot(latitude, longitude, locationName, { updateUrl = true } = {}
     delayMs: 1000,
   });
 
-  // Connect to real weather data — fade in on first load so audio swells in gently
   await startForLocation(latitude, longitude, locationName, { fadeIn: true, updateUrl });
-
-  // Start the movement conductor after weather connects
-  if (CONDUCTOR_ENABLED && movementConductor) {
-    movementConductor.resume();
-    startConductorTick();
-  }
+  movementConductor?.resume();
+  startConductorTick();
 }
 
-/**
- * Main initialization — wait for user click to start audio context.
- */
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    orchestra?.dispose();
+    feed?.stop();
+    visual?.dispose?.();
+    secondaryMenuController?.dispose();
+    stopConductorTick();
+    clearInterval(clockInterval);
+  });
+}
+
 function init() {
   const listenBtn = document.getElementById('listen-btn');
   const overlay = document.getElementById('overlay');
@@ -1103,40 +568,19 @@ function init() {
   const startListening = async () => {
     if (isStarting) return;
     isStarting = true;
-    listenBtn.textContent = 'Starting...';
+    listenBtn.textContent = 'Starting…';
     listenBtn.disabled = true;
-
     try {
-      // iOS 17+: request 'playback' audio session so audio plays through the
-      // mute/silent switch and continues when the screen locks (same category
-      // as Spotify / Apple Music). No-op on other platforms.
-      if ('audioSession' in navigator) {
-        navigator.audioSession.type = 'playback';
-      }
-
+      // iOS 17+: play through the silent switch and keep playing when locked
+      if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
       await Tone.start();
-
-      // Try browser geolocation
-      display = createDisplay(); // Temp display for loading message
-      display.setLocation('Finding your location...');
-
-      // Check for permalink ?lat=&lng= params — shared links are authoritative.
-      // If present, boot directly into the shared coordinates.
+      display = createDisplay();
+      display.setLocation('Finding your location…');
       const sharedCoords = parseSharedCoordinates(window.location.search);
       history.replaceState(null, '', window.location.pathname);
-
-      // Avoid unnecessary geolocation prompt for shared links.
       const browserLoc = sharedCoords ? null : await getBrowserLocation();
-      const startupLocation = resolveStartupLocation({
-        sharedCoords,
-        browserLocation: browserLoc,
-      });
-
-      await boot(startupLocation.latitude, startupLocation.longitude, startupLocation.locationName, {
-        updateUrl: startupLocation.updateUrl,
-      });
-
-      // Startup succeeded; remove one-time overlay keyboard shortcuts.
+      const startup = resolveStartupLocation({ sharedCoords, browserLocation: browserLoc });
+      await boot(startup.latitude, startup.longitude, startup.locationName, { updateUrl: startup.updateUrl });
       overlayShortcutController?.dispose();
       overlayShortcutController = null;
     } catch (err) {
@@ -1148,11 +592,7 @@ function init() {
   };
 
   listenBtn.addEventListener('click', startListening);
-  overlayShortcutController = setupOverlayStartShortcuts({
-    overlay,
-    listenBtn,
-    onStart: startListening,
-  });
+  overlayShortcutController = setupOverlayStartShortcuts({ overlay, listenBtn, onStart: startListening });
 }
 
 init();

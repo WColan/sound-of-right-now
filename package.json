@@ -1,7 +1,7 @@
 {
   "name": "sound-of-right-now",
   "private": true,
-  "version": "2026.03.11.1",
+  "version": "2026.10.17.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^1.6.1",
+    "astronomy-engine": "^2.1.19",
     "tone": "^15.1.22"
   },
   "devDependencies": {
