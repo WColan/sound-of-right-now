@@ -87,6 +87,15 @@ export async function searchCities(query) {
  * Uses BigDataCloud's free reverse geocoding API (no key required).
  */
 export async function reverseGeocode(latitude, longitude) {
+  return (await reverseGeocodeDetails(latitude, longitude)).name;
+}
+
+/**
+ * Reverse geocode to { name, countryCode } — the country code lets the app
+ * look up today's public holidays.
+ */
+export async function reverseGeocodeDetails(latitude, longitude) {
+  const fallback = { name: `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`, countryCode: null };
   try {
     const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
     const response = await fetch(url);
@@ -94,29 +103,21 @@ export async function reverseGeocode(latitude, longitude) {
 
     const city = data.city || data.locality || data.principalSubdivision;
     const country = normalizeCountryName(data.countryName);
-    const countryCode = String(data.countryCode || '').toUpperCase();
+    const countryCode = String(data.countryCode || '').toUpperCase() || null;
     const admin1 = countryCode === 'US' ? getUSStateLabel(data) : '';
 
     if (city) {
-      return formatLocation({
-        name: city,
-        admin1,
-        country,
-      });
+      return { name: formatLocation({ name: city, admin1, country }), countryCode };
     }
     if (data.principalSubdivision) {
-      return formatLocation({
-        name: data.principalSubdivision,
-        admin1: '',
-        country,
-      });
+      return { name: formatLocation({ name: data.principalSubdivision, admin1: '', country }), countryCode };
     }
-    if (country) return country;
+    if (country) return { name: country, countryCode };
   } catch (err) {
     // Fallback: just show coordinates
   }
 
-  return `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+  return fallback;
 }
 
 /**

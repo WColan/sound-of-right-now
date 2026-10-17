@@ -1,0 +1,318 @@
+{
+  "violins": {
+    "tier": 1,
+    "notes": {
+      "A3": "A3.m4a",
+      "A4": "A4.m4a",
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "C5": "C5.m4a",
+      "D4": "D4.m4a",
+      "D6": "D6.m4a",
+      "E5": "E5.m4a",
+      "F#4": "Fs4.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "violas": {
+    "tier": 1,
+    "notes": {
+      "A4": "A4.m4a",
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "C3": "C3.m4a",
+      "C5": "C5.m4a",
+      "D3": "D3.m4a",
+      "D4": "D4.m4a",
+      "D6": "D6.m4a",
+      "E3": "E3.m4a",
+      "E5": "E5.m4a",
+      "F4": "F4.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "celli": {
+    "tier": 1,
+    "notes": {
+      "A3": "A3.m4a",
+      "B2": "B2.m4a",
+      "B4": "B4.m4a",
+      "C2": "C2.m4a",
+      "C4": "C4.m4a",
+      "D3": "D3.m4a",
+      "D5": "D5.m4a",
+      "E2": "E2.m4a",
+      "E4": "E4.m4a",
+      "F3": "F3.m4a",
+      "F5": "F5.m4a",
+      "G2": "G2.m4a",
+      "G4": "G4.m4a"
+    }
+  },
+  "basses": {
+    "tier": 1,
+    "notes": {
+      "A#1": "As1.m4a",
+      "A2": "A2.m4a",
+      "B3": "B3.m4a",
+      "C#3": "Cs3.m4a",
+      "C2": "C2.m4a",
+      "D2": "D2.m4a",
+      "E2": "E2.m4a",
+      "E3": "E3.m4a",
+      "F#1": "Fs1.m4a",
+      "F#2": "Fs2.m4a",
+      "G#2": "Gs2.m4a",
+      "G#3": "Gs3.m4a",
+      "G1": "G1.m4a"
+    }
+  },
+  "horns": {
+    "tier": 2,
+    "notes": {
+      "A#2": "As2.m4a",
+      "A1": "A1.m4a",
+      "A3": "A3.m4a",
+      "C2": "C2.m4a",
+      "C4": "C4.m4a",
+      "D#2": "Ds2.m4a",
+      "D3": "D3.m4a",
+      "D5": "D5.m4a",
+      "F3": "F3.m4a",
+      "F5": "F5.m4a",
+      "G2": "G2.m4a"
+    }
+  },
+  "trombones": {
+    "tier": 3,
+    "notes": {
+      "A#1": "As1.m4a",
+      "A#2": "As2.m4a",
+      "C#2": "Cs2.m4a",
+      "C#4": "Cs4.m4a",
+      "C4": "C4.m4a",
+      "D#2": "Ds2.m4a",
+      "D#4": "Ds4.m4a",
+      "D3": "D3.m4a",
+      "F2": "F2.m4a",
+      "F3": "F3.m4a",
+      "F4": "F4.m4a"
+    }
+  },
+  "flute": {
+    "tier": 2,
+    "notes": {
+      "A4": "A4.m4a",
+      "A5": "A5.m4a",
+      "A6": "A6.m4a",
+      "C4": "C4.m4a",
+      "C5": "C5.m4a",
+      "C6": "C6.m4a",
+      "C7": "C7.m4a",
+      "E4": "E4.m4a",
+      "E5": "E5.m4a",
+      "E6": "E6.m4a"
+    }
+  },
+  "clarinet": {
+    "tier": 2,
+    "notes": {
+      "A#3": "As3.m4a",
+      "A#4": "As4.m4a",
+      "A#5": "As5.m4a",
+      "D3": "D3.m4a",
+      "D4": "D4.m4a",
+      "D5": "D5.m4a",
+      "D6": "D6.m4a",
+      "F#6": "Fs6.m4a",
+      "F3": "F3.m4a",
+      "F4": "F4.m4a",
+      "F5": "F5.m4a"
+    }
+  },
+  "oboe": {
+    "tier": 3,
+    "notes": {
+      "A#3": "As3.m4a",
+      "A#4": "As4.m4a",
+      "A#5": "As5.m4a",
+      "D4": "D4.m4a",
+      "D5": "D5.m4a",
+      "D6": "D6.m4a",
+      "F4": "F4.m4a",
+      "F5": "F5.m4a",
+      "F6": "F6.m4a"
+    }
+  },
+  "harp": {
+    "tier": 2,
+    "notes": {
+      "A2": "A2.m4a",
+      "A4": "A4.m4a",
+      "A6": "A6.m4a",
+      "B1": "B1.m4a",
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "B6": "B6.m4a",
+      "C3": "C3.m4a",
+      "C5": "C5.m4a",
+      "D2": "D2.m4a",
+      "D4": "D4.m4a",
+      "D6": "D6.m4a",
+      "D7": "D7.m4a",
+      "E1": "E1.m4a",
+      "E3": "E3.m4a",
+      "E5": "E5.m4a",
+      "F2": "F2.m4a",
+      "F4": "F4.m4a",
+      "F6": "F6.m4a",
+      "F7": "F7.m4a",
+      "G1": "G1.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "violinTrem": {
+    "tier": 3,
+    "notes": {
+      "A3": "A3.m4a",
+      "A4": "A4.m4a",
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "C5": "C5.m4a",
+      "D4": "D4.m4a",
+      "D6": "D6.m4a",
+      "E5": "E5.m4a",
+      "F#4": "Fs4.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "violinPizz": {
+    "tier": 3,
+    "notes": {
+      "A3": "A3.m4a",
+      "A4": "A4.m4a",
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "C5": "C5.m4a",
+      "D4": "D4.m4a",
+      "D6": "D6.m4a",
+      "E5": "E5.m4a",
+      "F#4": "Fs4.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "celloPizz": {
+    "tier": 3,
+    "notes": {
+      "A3": "A3.m4a",
+      "B2": "B2.m4a",
+      "B4": "B4.m4a",
+      "C2": "C2.m4a",
+      "C4": "C4.m4a",
+      "D3": "D3.m4a",
+      "D5": "D5.m4a",
+      "E2": "E2.m4a",
+      "E4": "E4.m4a",
+      "F3": "F3.m4a",
+      "F5": "F5.m4a",
+      "G2": "G2.m4a",
+      "G4": "G4.m4a"
+    }
+  },
+  "glock": {
+    "tier": 2,
+    "notes": {
+      "C6": "C6.m4a",
+      "C7": "C7.m4a",
+      "C8": "C8.m4a",
+      "G5": "G5.m4a",
+      "G6": "G6.m4a",
+      "G7": "G7.m4a"
+    }
+  },
+  "marimba": {
+    "tier": 3,
+    "notes": {
+      "B3": "B3.m4a",
+      "B5": "B5.m4a",
+      "C3": "C3.m4a",
+      "C5": "C5.m4a",
+      "C7": "C7.m4a",
+      "F2": "F2.m4a",
+      "F4": "F4.m4a",
+      "F6": "F6.m4a",
+      "G3": "G3.m4a",
+      "G5": "G5.m4a"
+    }
+  },
+  "piano": {
+    "tier": 2,
+    "notes": {
+      "A0": "A0.m4a",
+      "C#1": "Cs1.m4a",
+      "F1": "F1.m4a",
+      "A1": "A1.m4a",
+      "C#2": "Cs2.m4a",
+      "F2": "F2.m4a",
+      "A2": "A2.m4a",
+      "C#3": "Cs3.m4a",
+      "F3": "F3.m4a",
+      "A3": "A3.m4a",
+      "C#4": "Cs4.m4a",
+      "F4": "F4.m4a",
+      "A4": "A4.m4a",
+      "C#5": "Cs5.m4a",
+      "F5": "F5.m4a",
+      "A5": "A5.m4a",
+      "C#6": "Cs6.m4a",
+      "F6": "F6.m4a",
+      "A6": "A6.m4a",
+      "C#7": "Cs7.m4a",
+      "F7": "F7.m4a",
+      "A7": "A7.m4a",
+      "C#8": "Cs8.m4a"
+    }
+  },
+  "timpani": {
+    "tier": 3,
+    "notes": {
+      "hit1": "hit1.m4a",
+      "hit3": "hit3.m4a",
+      "hit5": "hit5.m4a"
+    },
+    "unpitched": true
+  },
+  "timpaniRoll": {
+    "tier": 3,
+    "notes": {
+      "roll1": "roll1.m4a",
+      "roll4": "roll4.m4a"
+    },
+    "unpitched": true
+  },
+  "gong": {
+    "tier": 3,
+    "notes": {
+      "soft": "soft.m4a",
+      "mid": "mid.m4a",
+      "roll": "roll.m4a",
+      "scrape": "scrape.m4a"
+    },
+    "unpitched": true
+  },
+  "metals": {
+    "tier": 3,
+    "notes": {
+      "belltree": "belltree.m4a",
+      "triangle": "triangle.m4a",
+      "bassdrum": "bassdrum.m4a",
+      "cymbalBow": "cymbalBow.m4a"
+    },
+    "unpitched": true
+  }
+}

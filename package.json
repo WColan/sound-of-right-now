@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^1.6.1",
+    "astronomy-engine": "^2.1.19",
     "tone": "^15.1.22"
   },
   "devDependencies": {
